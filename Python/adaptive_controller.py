@@ -4,7 +4,7 @@ from numpy import sin, cos, pi
 from controller_extensions import *
 import matplotlib.pyplot as plt
 from orthosis import Orthosis
-from scipy.interpolate import Rbf
+from scipy.linalg.blas import sgemm
 
 
 class AdaptiveController(Orthosis):
@@ -19,7 +19,7 @@ class AdaptiveController(Orthosis):
     input_shape=(1,
                  1),
     timestep=1e-7,
-    tf=5,
+    tf=2,
     alpha0=[0.]
   ):
     """
@@ -48,39 +48,24 @@ class AdaptiveController(Orthosis):
             tf=5
           )
 
-    self.alpha = alpha0
+    self.alpha = np.array(alpha0)
 
     return
 
-  # Need to redefine error
-  def _state_error(
-    self,
-    t=0,
-    states=[0.,
-            0.,
-            0.,
-            0.],
-    trajectory=[0.,
-                0.,
-                0.,
-                0.]
-  ):
+  def rbf(X, var=1, gamma=1):
     """ """
-
-    state_error = np.zeros((4,))
-    state_error = trajectory - states[:4]
-
-    return state_error
+    for i in X:
+      X[i] = var * np.exp(-gamma * X[i]**2)
+    return X
 
   # Redifining controller
   def generate_system(self):
 
     Y = None
-    scale = 1e3
     i = 0.0
     count = 0
-    dx = self.state0
-    Kp = 1 * np.eye(2) * scale
+    scale = 1
+    Kp = 100 * np.eye(2) * scale
     Kv = 1e-2 * Kp
     decay = 0
 
@@ -93,7 +78,7 @@ class AdaptiveController(Orthosis):
               )
 
     lam = 2 * Kp
-    L = 50 * np.eye(12)
+    L = 50 * np.eye(12) * scale
     self.alpha = np.array(
       [
         0.1,
@@ -109,7 +94,8 @@ class AdaptiveController(Orthosis):
         0.00001,
         0.000001
       ]
-    )
+    ).reshape(12,
+              1)
 
     s = None
 
@@ -123,8 +109,15 @@ class AdaptiveController(Orthosis):
     E2 = []
     t = []
 
-    # traj = self._desired_trajectory(coeffs=traj_coeffs, frequency=1e2*scale)
-    # print(traj)
+    traj = self._desired_trajectory(
+      t=0,
+      coeffs=traj_coeffs,
+      traj_type='sin',
+      frequency=10 * scale,
+      stiff_traj=False
+    )
+    self.state = traj
+    dx = self.state
 
     plt.ion()
     fig = plt.figure()
@@ -134,17 +127,20 @@ class AdaptiveController(Orthosis):
         t=i,
         coeffs=traj_coeffs,
         traj_type='sin',
-        frequency=1e1 * scale
+        frequency=10 * scale,
+        stiff_traj=False
       )
-      err = self._state_error(i, dx, traj)
+      err = self._state_error(dx, traj)
+      # print(err)
 
       # Defining sliding surface
       sld1 = err[:2]
       sld1 = sld1.reshape(2, 1)
-      sld2 = lam.dot(err[2:])
+      sld2 = err[2:]
       sld2 = sld2.reshape(2, 1)
 
-      sld = sld1 + sld2
+      sld = sld1 + lam.dot(sld2)
+      print(sld)
 
       x_unk_1 = np.array(
         [
@@ -172,9 +168,10 @@ class AdaptiveController(Orthosis):
       Y[0][:6] = x_unk_1
       Y[1][6:] = x_unk_2
 
-      alpha_grad = np.linalg.solve(-L, Y.T.dot(Kp.dot(sld)))
+      alpha_grad = np.linalg.inv(-L).dot(Y.T.dot(Kp.dot(sld)))
+      print(alpha_grad)
 
-      self.alpha = self.alpha.reshape(12, 1)
+      # self.alpha = self.alpha.reshape(12, 1)
       if i == 0:
         decay = 0
         self.alpha = self.alpha

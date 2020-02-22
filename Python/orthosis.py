@@ -25,7 +25,7 @@ class Orthosis(object):
                  1),
     timestep=1e-7,
     model='pd',
-    tf=5
+    tf=2
   ):
     """
     Initialize the class with the specific params
@@ -81,42 +81,41 @@ class Orthosis(object):
     coeffs=[0.,
             0.],
     traj_type='sin',
-    frequency=10
+    frequency=10,
+    stiff_traj=False
   ):
     """  """
 
     trajectory = np.zeros((4,))
-    if traj_type == 'sin':
-      trajectory[:2] = coeffs * (sin(frequency * t) + 1)
-      trajectory[2:] = 2 * frequency * coeffs * cos(frequency * t)
+    if not stiff_traj:
+      if traj_type == 'sin':
+        trajectory[:2] = coeffs * (sin(frequency * t) + 1)
+        trajectory[2:] = 2 * frequency * coeffs * cos(frequency * t)
+    else:
+      if traj_type == 'sin':
+        trajectory[:2] = coeffs[:2] * (sin(frequency * t) + 1)
+        trajectory[2:] = 2 * coeffs[:2] * cos(frequency * t)
 
     return trajectory
 
-  def _state_error(
-    self,
-    t=0,
-    states=[0.,
-            0.,
-            0.,
-            0.],
-    trajectory=[0.,
-                0.,
-                0.,
-                0.]
-  ):
+  def _state_error(self, states=[0., 0., 0., 0.], trajectory=[0., 0., 0., 0.]):
     """ """
 
-    state_error = np.zeros((4,))
-    state_error = trajectory - states[:4]
+    # state_error = np.zeros((4,))
+    if self.model == 'pd':
+      state_error = trajectory - states[:4]
+    elif self.model == 'adaptive':
+      state_error = (states[:4] - trajectory)
+    else:
+      print("Not specified")
 
     return state_error
 
   def generate_system(self):
 
-    scale = 1e3
     i = 0.0
     count = 0
-    dx = self.state0
+    scale = 1e3
     Kp = 1 * np.eye(2) * scale
     Kv = 1e-2 * Kp
 
@@ -127,6 +126,7 @@ class Orthosis(object):
       ]
     ).reshape(2,
               )
+    # traj_coeffs = np.array([0.6982 / 5, 0.4364 / 5, 3.49 / 5, 2.18 / 5])
 
     U1 = []
     U2 = []
@@ -138,8 +138,15 @@ class Orthosis(object):
     E2 = []
     t = []
 
-    # traj = self._desired_trajectory(coeffs=traj_coeffs, frequency=1e2*scale)
-    # print(traj)
+    traj = self._desired_trajectory(
+      t=0,
+      coeffs=traj_coeffs,
+      traj_type='sin',
+      frequency=10 * scale,
+      stiff_traj=False
+    )
+    self.state = traj
+    dx = self.state
 
     plt.ion()
     fig = plt.figure()
@@ -149,9 +156,10 @@ class Orthosis(object):
         t=i,
         coeffs=traj_coeffs,
         traj_type='sin',
-        frequency=1e1 * scale
+        frequency=10 * scale,
+        stiff_traj=False
       )
-      err = self._state_error(i, dx, traj)
+      err = self._state_error(dx, traj)
       u = (Kp.dot(err[:2].reshape(2, 1)) + Kv.dot(err[2:].reshape(2, 1)))
       prev_time, dx = self.step(u, self.timestep)
 
@@ -204,14 +212,6 @@ class Orthosis(object):
 
     dx = None
 
-    # if self.model is not 'rl':
-    #   r = integrate.ode(self._ode_func).set_integrator('dopri5', verbosity=1)
-    #   # 'dopri5', verbosity=1
-    #   r.set_f_params(torque.reshape(self.input_shape[0]))
-    #   r.set_initial_value(y=prev_state, t=0.0)
-    #   dx = r.integrate(r.t + timestep)
-    #   self.prev_time = r.t
-    # else:
     if self.input_shape == (1, 1):
       prev_state = np.append(s, torque)  # prev state with torque
     else:
@@ -220,6 +220,20 @@ class Orthosis(object):
         np.array(torque).reshape(1,
                                  self.input_shape[0])
       )
+
+    # if self.model is not 'rl':
+    #   # r = integrate.ode(self._ode_func).set_integrator('dopri5', verbosity=1)
+    #   # # 'dopri5', verbosity=1
+    #   # r.set_f_params(torque.reshape(self.input_shape[0]))
+    #   # r.set_initial_value(y=prev_state, t=0.0)
+    #   # dx = r.integrate(r.t + timestep)
+    #   # self.prev_time = r.t
+    #   rk45 = integrate.RK23(self._dxdt, 0, prev_state, t_bound=timestep)
+    #   rk45.step()
+    #   self.prev_time = rk45.t
+    #   dx = rk45.y
+    #   dx = dx[:4]
+    # else:
     dx = rk4(self._dxdt, [0, timestep], prev_state)
     dx = dx[-1]
     dx = dx[:4]
@@ -246,12 +260,9 @@ class Orthosis(object):
     y = None
 
     if self.input_shape == (1, 1):
-      # Pad 0 to joint 1 if shape if 1,1
       u = np.array([0., u]).reshape(2, 1)
     else:
       u = np.array(u).reshape(self.input_shape[0], 1)
-
-      # IF NON PD ADD FUNCTION HERE FOR FORWARD PASS
 
     ds = np.zeros(s.shape)
     # ds = s
@@ -259,12 +270,6 @@ class Orthosis(object):
     ds[1] = s[3]
     mass_mat, cor_mat, grav_mat, stiffness = self.state_dynamics(s)
     ds[2:] = np.linalg.solve(mass_mat, u - stiffness).reshape(2,)
-
-    ## Calculate loss if not RL
-    #
-    #
-    #
-    #
 
     if self.model is not 'rl':
       y = np.array([ds[0], ds[1], ds[2], ds[3]])
@@ -289,19 +294,12 @@ class Orthosis(object):
       # IF NON PD ADD FUNCTION HERE FOR FORWARD PASS
 
     ds = np.zeros(s.shape)
-    # ds = s
     ds[0] = s[2]
     ds[1] = s[3]
     mass_mat, cor_mat, grav_mat, stiffness = self.state_dynamics(s)
     ds[2:] = np.linalg.solve(mass_mat, u - stiffness).reshape(2,)
 
     self.count += t
-
-    ## Calculate loss if not RL
-    #
-    #
-    #
-    #
 
     if self.input_shape == (1, 1):
       # Pad 0 to joint 1 if shape if 1,1
@@ -550,5 +548,5 @@ class Orthosis(object):
 
 if __name__ == '__main__':
   # Tests
-  orthosis = Orthosis(input_shape=(2, 1))
+  orthosis = Orthosis(input_shape=(2, 1), model='pd')
   orthosis.generate_system()
