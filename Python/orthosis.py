@@ -137,6 +137,7 @@ class Orthosis(object):
     E1 = []
     E2 = []
     t = []
+    T = []
 
     traj = self._desired_trajectory(
       t=0,
@@ -159,6 +160,7 @@ class Orthosis(object):
         frequency=10 * scale,
         stiff_traj=False
       )
+
       err = self._state_error(dx, traj)
       u = (Kp.dot(err[:2].reshape(2, 1)) + Kv.dot(err[2:].reshape(2, 1)))
       prev_time, dx = self.step(u, self.timestep)
@@ -170,6 +172,7 @@ class Orthosis(object):
       t.append(prev_time)
       T1.append(traj[0])
       T2.append(traj[1])
+      # T.append(traj)
       E1.append(err[0])
       E2.append(err[1])
 
@@ -183,6 +186,8 @@ class Orthosis(object):
         plt.plot(T2, 'b--')
         plt.show()
         plt.pause(1e-4)
+        # Trajectory_Max = np.array(T)
+        # print(np.max(Trajectory_Max, axis=0))
 
     plt.subplot(311)
     j1_handle = plt.plot(J1, 'r')
@@ -238,10 +243,10 @@ class Orthosis(object):
     dx = dx[-1]
     dx = dx[:4]
 
-    # dx[0] = wrap(dx[0], self.JOINT_LIMITS_1[0], self.JOINT_LIMITS_1[1])
-    # dx[1] = wrap(dx[1], self.JOINT_LIMITS_2[0], self.JOINT_LIMITS_2[1])
-    # dx[2] = bound(dx[2], self.JOINT_LIMITS_1[2], self.JOINT_LIMITS_1[3])
-    # dx[3] = bound(dx[3], self.JOINT_LIMITS_2[2], self.JOINT_LIMITS_2[3])
+    dx[0] = wrap(dx[0], self.JOINT_LIMITS_1[0], self.JOINT_LIMITS_1[1])
+    dx[1] = wrap(dx[1], self.JOINT_LIMITS_2[0], self.JOINT_LIMITS_2[1])
+    dx[2] = bound(dx[2], self.JOINT_LIMITS_1[2], self.JOINT_LIMITS_1[3])
+    dx[3] = bound(dx[3], self.JOINT_LIMITS_2[2], self.JOINT_LIMITS_2[3])
 
     self.prev_time = self.count
     self.count = 0.
