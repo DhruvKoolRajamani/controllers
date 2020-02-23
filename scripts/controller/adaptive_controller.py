@@ -1,9 +1,9 @@
 import scipy.integrate as integrate
 import numpy as np
 from numpy import sin, cos, pi
-from controller_extensions import *
+from controller.controller_extensions import *
 import matplotlib.pyplot as plt
-from orthosis import Orthosis
+from controller.orthosis import Orthosis
 from scipy.linalg.blas import sgemm
 
 

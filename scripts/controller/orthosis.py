@@ -1,7 +1,7 @@
 import scipy.integrate as integrate
 import numpy as np
 from numpy import sin, cos, pi
-from controller_extensions import *
+from controller.controller_extensions import *
 import matplotlib.pyplot as plt
 
 np.set_printoptions(precision=3, linewidth=200)
@@ -10,8 +10,8 @@ np.set_printoptions(precision=3, linewidth=200)
 class Orthosis(object):
   """ Default class to subscribe and publish to orthosis robots """
 
-  LINK_LENGTH_1 = 0.04297
-  LINK_LENGTH_1 = 0.04689
+  LINK_LENGTH_1 = 1.
+  LINK_LENGTH_2 = 1.
   LINK_MASS_1 = 0.0049366
   LINK_MASS_2 = 0.0034145
 
@@ -24,7 +24,7 @@ class Orthosis(object):
     input_shape=(1,
                  1),
     timestep=1e-7,
-    model='pd',
+    model='rl',
     tf=2
   ):
     """
@@ -50,7 +50,7 @@ class Orthosis(object):
     self.tf = tf
     self.model = model
     # Store previous time before each step call
-    self.count = 0.
+    self.count = 0
     self.prev_time = 0.
 
     self.state0 = np.array(x0)
@@ -163,10 +163,11 @@ class Orthosis(object):
 
       err = self._state_error(dx, traj)
       u = (Kp.dot(err[:2].reshape(2, 1)) + Kv.dot(err[2:].reshape(2, 1)))
+
       prev_time, dx = self.step(u, self.timestep)
 
-      U1.append(u[0][0])
-      U2.append(u[1][0])
+      # U1.append(u[0][0])
+      # U2.append(u[1][0])
       J1.append(dx[0])
       J2.append(dx[1])
       t.append(prev_time)
@@ -218,7 +219,8 @@ class Orthosis(object):
     dx = None
 
     if self.input_shape == (1, 1):
-      prev_state = np.append(s, torque)  # prev state with torque
+      tau = np.array([0., torque])
+      prev_state = np.append(s, tau)  # prev state with torque
     else:
       prev_state = np.append(
         s,
@@ -243,12 +245,13 @@ class Orthosis(object):
     dx = dx[-1]
     dx = dx[:4]
 
-    dx[0] = wrap(dx[0], self.JOINT_LIMITS_1[0], self.JOINT_LIMITS_1[1])
-    dx[1] = wrap(dx[1], self.JOINT_LIMITS_2[0], self.JOINT_LIMITS_2[1])
-    dx[2] = bound(dx[2], self.JOINT_LIMITS_1[2], self.JOINT_LIMITS_1[3])
-    dx[3] = bound(dx[3], self.JOINT_LIMITS_2[2], self.JOINT_LIMITS_2[3])
+    # Consider changing to bound bound bound bound
+    # dx[0] = wrap(dx[0], self.JOINT_LIMITS_1[0], self.JOINT_LIMITS_1[1])
+    # dx[1] = wrap(dx[1], self.JOINT_LIMITS_2[0], self.JOINT_LIMITS_2[1])
+    # dx[2] = bound(dx[2], self.JOINT_LIMITS_1[2], self.JOINT_LIMITS_1[3])
+    # dx[3] = bound(dx[3], self.JOINT_LIMITS_2[2], self.JOINT_LIMITS_2[3])
 
-    self.prev_time = self.count
+    cnt = self.count
     self.count = 0.
 
     self.state = dx
@@ -256,30 +259,30 @@ class Orthosis(object):
     # Add loss function here if model is not rl
     # Option to override
 
-    return self.prev_time, dx
+    return cnt, dx
 
-  def _ode_func(self, t, states, inputs):
-    """dx/dt"""
-    u = inputs
-    s = states
-    y = None
+  # def _ode_func(self, t, states, inputs):
+  #   """dx/dt"""
+  #   u = inputs
+  #   s = states
+  #   y = None
 
-    if self.input_shape == (1, 1):
-      u = np.array([0., u]).reshape(2, 1)
-    else:
-      u = np.array(u).reshape(self.input_shape[0], 1)
+  #   if self.input_shape == (1, 1):
+  #     u = np.array([0., u]).reshape(2, 1)
+  #   else:
+  #     u = np.array(u).reshape(self.input_shape[0], 1)
 
-    ds = np.zeros(s.shape)
-    # ds = s
-    ds[0] = s[2]
-    ds[1] = s[3]
-    mass_mat, cor_mat, grav_mat, stiffness = self.state_dynamics(s)
-    ds[2:] = np.linalg.solve(mass_mat, u - stiffness).reshape(2,)
+  #   ds = np.zeros(s.shape)
+  #   # ds = s
+  #   ds[0] = s[2]
+  #   ds[1] = s[3]
+  #   mass_mat, cor_mat, grav_mat, stiffness = self.state_dynamics(s)
+  #   ds[2:] = np.linalg.solve(mass_mat, u - stiffness).reshape(2,)
 
-    if self.model is not 'rl':
-      y = np.array([ds[0], ds[1], ds[2], ds[3]])
+  #   if self.model is not 'rl':
+  #     y = np.array([ds[0], ds[1], ds[2], ds[3]])
 
-    return y
+  #   return y
 
   def _dxdt(self, t, states):
     """dx/dt"""
@@ -290,13 +293,9 @@ class Orthosis(object):
     s = states[:4]
     u = states[4:]
 
-    if self.input_shape == (1, 1):
-      # Pad 0 to joint 1 if shape if 1,1
-      u = np.array([0., u]).reshape(2, 1)
-    else:
-      u = np.array(u).reshape(self.input_shape[0], 1)
+    u = np.array(u).reshape(u.size, 1)
 
-      # IF NON PD ADD FUNCTION HERE FOR FORWARD PASS
+    # IF NON PD ADD FUNCTION HERE FOR FORWARD PASS
 
     ds = np.zeros(s.shape)
     ds[0] = s[2]
@@ -306,14 +305,15 @@ class Orthosis(object):
 
     self.count += t
 
-    if self.input_shape == (1, 1):
-      # Pad 0 to joint 1 if shape if 1,1
-      y = np.array([ds[0], ds[1], ds[2], ds[3], u[1][0]])
-    else:
-      y = np.array([ds[0], ds[1], ds[2], ds[3], u[0][0], u[1][0]])
+    # if self.input_shape == (1, 1):
+    #   # Pad 0 to joint 1 if shape if 1,1
+    #   y = np.array([ds[0], ds[1], ds[2], ds[3], 0., u[1][0]])
+    # else:
+    y = np.array([ds[0], ds[1], ds[2], ds[3], u[0][0], u[1][0]])
 
     return y
 
+  # Consider changing dynamics
   def state_dynamics(self, s):
     mass_mat = np.array(
       [
@@ -509,18 +509,6 @@ class Orthosis(object):
         MAX_POS = {},\n
         MIN_VEL = {},\n
         MAX_VEL = {},\n
-    AVAIL_TORQUE =\n
-        [{}, {}, {}]\n,
-    MASS_MAT =\n,
-    {},\n
-    CORIOLIS_MAT =\n,
-    {},\n
-    GRAVITY_MAT =\n,
-    {}\n,
-    STIFFNESS_RELAXED =\n
-    {},\n
-    STIFFNESS_EXTENDED =\n
-    {},\n
     """.format(
       self.LINK_LENGTH_1,
       self.LINK_LENGTH_1,
@@ -533,15 +521,7 @@ class Orthosis(object):
       self.JOINT_LIMITS_2[0],
       self.JOINT_LIMITS_2[1],
       self.JOINT_LIMITS_2[2],
-      self.JOINT_LIMITS_2[3],
-      self.AVAIL_TORQUE[0],
-      self.AVAIL_TORQUE[1],
-      self.AVAIL_TORQUE[2],
-      self.mass_mat,
-      self.cor_mat,
-      self.grav_mat,
-      self.stiffness_relaxed_coeffs.dot(self.stiffness_states),
-      self.stiffness_extended_coeffs.dot(self.stiffness_states)
+      self.JOINT_LIMITS_2[3]
     )
 
     return objstring
