@@ -1,2 +1,2 @@
-from controller_extensions import *
-from orthosis import *
+from .orthosis_env import *
+from .gym_env import *

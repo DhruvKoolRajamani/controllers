@@ -107,7 +107,7 @@ class Orthosis(object):
     elif self.model == 'adaptive':
       state_error = (states[:4] - trajectory)
     else:
-      print("Not specified")
+      state_error = (states[:4] - trajectory)
 
     return state_error
 

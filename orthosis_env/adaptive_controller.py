@@ -52,7 +52,7 @@ class AdaptiveController(Orthosis):
 
     return
 
-  def rbf(X, var=1, gamma=1):
+  def rbf(self, X, var=1, gamma=1):
     """ """
     for i in X:
       X[i] = var * np.exp(-gamma * X[i]**2)

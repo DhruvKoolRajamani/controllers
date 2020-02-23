@@ -3,3 +3,5 @@
 *.vscode/
 Python/__pycache__
 __pycache__
+build/
+controllers.egg-info/
