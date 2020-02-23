@@ -19,12 +19,7 @@ class OrthosisAgent(object):
   def act(self, observation, reward, done):
     # Add code here
     # TRY CROSS ENTROPY?
-    act = self.action_space.sample() if len(
-      self.action_space
-    ) == 1 else np.array(
-      [self.action_space[0].sample(),
-       self.action_space[1].sample()]
-    )
+    act = self.action_space.sample()
     return act
 
 

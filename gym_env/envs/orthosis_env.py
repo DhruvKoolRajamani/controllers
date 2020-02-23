@@ -29,7 +29,7 @@ class OrthosisEnv(Orthosis, core.Env):
   domain_fig = None
   actions_num = 3
 
-  def __init__(self, x0=[0., 0., 0., 0.], input_shape=(2, 1)):
+  def __init__(self, x0=[0., 0., 0., 0.], input_shape=(1, 1)):
     """
         Initialize the class with the specific params
       *x0*
@@ -77,24 +77,18 @@ class OrthosisEnv(Orthosis, core.Env):
     self.past_trajectories = np.zeros((self.past_max, 4))
     self.past_states = np.zeros((self.past_max, 4))
     self.past_error = None
-    if self.input_shape == (1, 1):
-      self.past_error = np.zeros((self.past_max, 1))
-    else:
-      self.past_error = np.zeros((self.past_max, 2))
-      print(self.past_error.shape)
+
+    self.past_error = np.zeros((self.past_max, 1))
+
     self.past_count = 0
 
     self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
     # Scaling factor for frequency
-    self.scale = 1e3
+    self.scale = 1e1
 
     # Define 1 or two possible action spaces if input is 1,1 or 2,1
-    self.action_space = None
-    if self.input_shape == (1, 1):
-      self.action_space = spaces.Discrete(3)
-    else:
-      self.action_space = np.array([spaces.Discrete(3), spaces.Discrete(3)])
+    self.action_space = spaces.Discrete(3)
 
     self.state = x0
     self.traj_coeffs = np.array(
@@ -122,10 +116,9 @@ class OrthosisEnv(Orthosis, core.Env):
     self.traj = np.zeros((4,))
     self.past_trajectories = np.zeros((self.past_max, 4))
     self.past_states = np.zeros((self.past_max, 4))
-    if self.input_shape == (1, 1):
-      self.past_error = np.zeros((self.past_max, 1))
-    else:
-      self.past_error = np.zeros((self.past_max, 2))
+
+    self.past_error = np.zeros((self.past_max, 1))
+
     self.past_count = 0
     self.count = 0
     self.prev_time = 0.
@@ -138,10 +131,8 @@ class OrthosisEnv(Orthosis, core.Env):
     if self.past_count < self.past_max:
       self.past_states[self.past_count] = state.reshape(1, 4)
       self.past_trajectories[self.past_count] = traj.reshape(1, 4)
-      if self.input_shape == (1, 1):
-        self.past_error[self.past_count] = err
-      else:
-        self.past_error[self.past_count] = err.reshape(1, 2)
+      self.past_error[self.past_count] = err
+
       self.past_count += 1
     else:
       self.past_states = self.past_states[1:]
@@ -159,10 +150,7 @@ class OrthosisEnv(Orthosis, core.Env):
         axis=0
       )
       self.past_error = self.past_error[1:, :]
-      if self.input_shape == (1, 1):
-        self.past_error = np.append(self.past_error, err)
-      else:
-        self.past_error = np.append(self.past_error, err.reshape(1, 2), axis=0)
+      self.past_error = np.append(self.past_error, err)
 
     return
 
@@ -179,13 +167,9 @@ class OrthosisEnv(Orthosis, core.Env):
     # print(error)
 
     err = None
-    if self.input_shape == (1, 1):
-      err = error[0] / max_joint_error[0] + error[1] / max_joint_error[1]
-    else:
-      err = np.array(
-        [error[0] / max_joint_error[0],
-         error[1] / max_joint_error[1]]
-      )
+
+    err = error[0] / max_joint_error[0] + error[1] / max_joint_error[1]
+
     # print(err)
     rew = 1 - np.absolute(err)**0.5
 
@@ -204,10 +188,7 @@ class OrthosisEnv(Orthosis, core.Env):
     self.traj = traj
     torque = None
 
-    if self.input_shape == (1, 1):
-      torque = self.AVAIL_TORQUE[a]
-    else:
-      torque = np.array([self.AVAIL_TORQUE[a[0]], self.AVAIL_TORQUE[a[1]]])
+    torque = self.AVAIL_TORQUE[a]
 
     if self.torque_noise_max > 0:
       torque += self.np_random.uniform(
@@ -223,10 +204,8 @@ class OrthosisEnv(Orthosis, core.Env):
     self.past_state_pushback(traj, dx, err)
 
     terminal = self._terminal(dx)
-    if self.input_shape == (1, 1):
-      reward = reward if not terminal else 100
-    else:
-      reward = reward if not terminal else [100, 100]
+    reward = reward if not terminal else 100
+
     print(reward)
     # IF MULTI INPUT MAYBE RESET WHEN BOTH REWARDS RETURN 100 AND NOT JUST ONE
     return (self._get_ob(), reward, terminal, {})
@@ -241,25 +220,13 @@ class OrthosisEnv(Orthosis, core.Env):
     if self.past_count == self.past_max:
       mean = None
 
-      if self.input_shape == (1, 1):
-        thresh = 0.001
-        mean = np.absolute(np.mean(self.past_error))
-        mean = mean - thresh
-        if mean > 0:
-          return False
-        else:
-          return True
+      thresh = 0.01
+      mean = np.absolute(np.mean(self.past_error))
+      mean = mean - thresh
+      if mean > 0:
+        return False
       else:
-        thresh = np.array([0.1, 0.1])
-        mean = np.absolute(np.mean(self.past_error, axis=0))
-        mean = mean - thresh
-        # print(mean)
-        # If any item is larger than threshold, then all errors have not converged
-        if np.any(mean):
-          return False
-        else:
-          return True
-
+        return True
     return False
 
   def get_current_data(self):
