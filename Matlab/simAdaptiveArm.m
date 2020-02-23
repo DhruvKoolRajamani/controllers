@@ -7,6 +7,8 @@ global tau
 global err
 global alpha
 global act_tau
+global zeta
+global s
 global counter
 persistent k
 persistent ddx
@@ -73,15 +75,10 @@ vec_t = t_coeffs(1:2,1);
 x_d(1:2,1) = vec_t*(sin(10*t)+1);
 dvec_t = t_coeffs(3:4,1);
 x_d(3:4,1) = 2*dvec_t*cos(10*t);
-% ddvec_t = t_coeffs(5:6,1);
-% ddx_d(1:2,1) = 2*ddvec_t*sin(10*t);
+ddvec_t = t_coeffs(5:6,1);
+ddx_d(1:2,1) = 2*ddvec_t*sin(10*t);
            
-e = x(1:2,1) - x_d(1:2,1);
-err = [err e];
-de = x(3:4,1) - x_d(3:4,1);
 
-lambda = 2*Kp;
-s = de + lambda*e;
 
 if p == 1
     E = E + e*step;
@@ -91,26 +88,15 @@ elseif p == 2
 elseif p == 3
     u = -(Kp*e + Kv*de);
 elseif p == 4
+    e = x(1:2,1) - x_d(1:2,1);
+err = [err e];
+de = x(3:4,1) - x_d(3:4,1);
+
+lambda = 2*Kp;
+s = de + lambda*e;
     % Adaptive control law
     x_unk_1 = [1 x(1,1) x(1,1)^2 x(1,1)^3 x(1,1)^4 x(1,1)^5]; % de(1,1)
     x_unk_2 = [1 x(2,1) x(2,1)^2 x(2,1)^3 x(2,1)^4 x(2,1)^5]; % de(2,1)
-
-    Y = [0 0 0 0 0 0 0 0 0 0 0 0;
-         normpdf(x_unk_1) normpdf(x_unk_2)];
-    alpha_gradient = -L\Y.'*Kp*s; %
-    if t == 0
-        alpha = alpha0;
-        k=0;
-    else
-        k = t-k;
-        alpha = alpha + alpha_gradient*k;
-    %     disp(alpha)
-    end
-    u = Y*alpha - Kp*s; %-
-elseif p == 5
-    % Adaptive control law
-    x_unk_1 = [1 x(1,1) x(1,1)^2 x(1,1)^3 x(1,1)^4 x(1,1)^5 tau(1,1)]; % de(1,1)
-    x_unk_2 = [1 x(2,1) x(2,1)^2 x(2,1)^3 x(2,1)^4 x(2,1)^5 tau(2,1)]; % de(2,1)
 
     Y = [normpdf(x_unk_1) 0 0 0 0 0 0;
          0 0 0 0 0 0 normpdf(x_unk_2)];
@@ -123,7 +109,67 @@ elseif p == 5
         alpha = alpha + alpha_gradient*k;
     %     disp(alpha)
     end
-    u = Y*alpha - Kp*s;
+    u = Y*alpha - Kp*s; %-
+
+elseif p == 5
+    if t == 0
+        zeta = [0;0];
+    end
+%     err = [err ec];
+    lambda = 2*Kp(1,1);
+    e_n = x(1,1) - x_d(1,1);
+    de_n = x(3,1) - x_d(3,1);
+%     s_n = de_n + lambda*e_n;
+    s_n = x(3,1) - zeta(1);
+    
+    lambda = 2*Kp(2,2);
+    e_c = x(2,1) - x_d(2,1);
+    de_c = x(4,1) - x_d(4,1);
+%     s_c = de_c + lambda*e_c;
+    s_c = x(4,1) - zeta(2);
+    e = [e_n;e_c];
+    err = [err e];
+    s = [s_n;s_c];
+    
+    % Adaptive control law
+   % Adaptive control law
+    x_unk_1 = [1 x(1,1) x(1,1)^2 x(1,1)^3 x(1,1)^4 x(1,1)^5]; % de(1,1)
+    x_unk_2 = [1 x(2,1) x(2,1)^2 x(2,1)^3 x(2,1)^4 x(2,1)^5]; % de(2,1)
+
+    Y_n = [normpdf(x_unk_1) 0 0 0 0 0 0];
+    Y_c =  [0 0 0 0 0 0 normpdf(x_unk_2)];
+    Y = [Y_n;Y_c];
+    
+    
+    S = [1 0];
+    M_n = S*M_*S.';
+    lambda1 = 100;
+    lambda2 = 100;
+    K=0.1;
+%     L=0.1*eye(12);
+    
+    if t == 0
+        k=0;
+        alpha = alpha0;
+        u = [0;Y_c*alpha - K*s_c]; %-
+        zeta_gradient_n = M_n\(Kp(1,1)*s_n - Y_n*alpha);
+        zeta_gradient_c = -lambda1*x(2,1) -lambda2*x(4,1);
+        zeta_gradient = [zeta_gradient_n;zeta_gradient_c];
+        zeta = zeta + zeta_gradient*t;
+        
+    else
+        k = t-k;
+        u = [0;Y_c*alpha - K*s_c]; %-
+        alpha_gradient = -L\(Y.'*s); %
+        alpha = alpha + alpha_gradient*k;
+        zeta_gradient_n = M_n\(Kp(1,1)*s_n - Y_n*alpha);
+        zeta_gradient_c = -lambda1*x(2,1) -lambda2*x(4,1);
+        zeta_gradient = [zeta_gradient_n;zeta_gradient_c];
+        zeta = zeta + zeta_gradient*t;
+        
+    %     disp(alpha)
+    end
+
 else
     u = 0;
 end

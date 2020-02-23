@@ -182,27 +182,27 @@ global tm1
 global err
 global alpha
 global act_tau
-p = 4;
+p = 5;
 tau = [];
 tm1 = [];
 err = [];
 act_tau = [];
 
-Kp = 1*[0, 0; 0, 1];
+Kp = 100*[1, 0; 0, 1];
 Kv = 0.01*Kp;
 
 tf1 = 5;
 
 syms t_
 
-% vec_t = [0.6982/5; 0.4364/5];
-vec_t = [0.4364/5; 0.4364/5];
+vec_t = [0.6982/5; 0.4364/5];
+% vec_t = [0.4364/5; 0.4364/5];
 pos_d(1:2,1) =   vec_t*(sin(10*t_)+1);
-% dvec_t = [3.49/5; 2.18/5];
-dvec_t = [2.18/5; 2.18/5];
+dvec_t = [3.49/5; 2.18/5];
+% dvec_t = [2.18/5; 2.18/5];
 vel_d(1:2,1) = 2*dvec_t*cos(10*t_);
-% ddvec_t = [-17.5/5; -10.9/5];
-ddvec_t = [-10.9/5; -10.9/5];
+ddvec_t = [-17.5/5; -10.9/5];
+% ddvec_t = [-10.9/5; -10.9/5];
 acc_d(1:2,1) = 2*ddvec_t*sin(10*t_);
 
 q_init = double(subs(pos_d,t_,0))
