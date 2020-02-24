@@ -16,7 +16,7 @@ class AdaptiveController(Orthosis):
         0.,
         0.,
         0.],
-    input_shape=(1,
+    input_shape=(2,
                  1),
     timestep=1e-7,
     tf=2,
@@ -64,9 +64,8 @@ class AdaptiveController(Orthosis):
     Y = None
     i = 0.0
     count = 0
-    scale = 1
-    Kp = 100 * np.eye(2) * scale
-    Kv = 1e-2 * Kp
+    Kp = 100 * np.eye(2) * self.scale
+    Kv = 1e-1 * Kp
     decay = 0
 
     traj_coeffs = np.array(
@@ -78,7 +77,7 @@ class AdaptiveController(Orthosis):
               )
 
     lam = 2 * Kp
-    L = 50 * np.eye(12) * scale
+    L = 50 * np.eye(12) * self.scale
     self.alpha = np.array(
       [
         0.1,
@@ -113,7 +112,7 @@ class AdaptiveController(Orthosis):
       t=0,
       coeffs=traj_coeffs,
       traj_type='sin',
-      frequency=10 * scale,
+      frequency=10 * self.scale,
       stiff_traj=False
     )
     self.state = traj
@@ -127,7 +126,7 @@ class AdaptiveController(Orthosis):
         t=i,
         coeffs=traj_coeffs,
         traj_type='sin',
-        frequency=10 * scale,
+        frequency=10 * self.scale,
         stiff_traj=False
       )
       err = self._state_error(dx, traj)
@@ -140,7 +139,6 @@ class AdaptiveController(Orthosis):
       sld2 = sld2.reshape(2, 1)
 
       sld = sld1 + lam.dot(sld2)
-      print(sld)
 
       x_unk_1 = np.array(
         [
@@ -169,7 +167,7 @@ class AdaptiveController(Orthosis):
       Y[1][6:] = x_unk_2
 
       alpha_grad = np.linalg.inv(-L).dot(Y.T.dot(Kp.dot(sld)))
-      print(alpha_grad)
+      # print(alpha_grad)
 
       # self.alpha = self.alpha.reshape(12, 1)
       if i == 0:
@@ -196,7 +194,7 @@ class AdaptiveController(Orthosis):
       i += prev_time
       count += 1
 
-      if count % 100 == 0:
+      if count % 500 == 0:
         plt.plot(J1, 'r')
         plt.plot(J2, 'b')
         plt.plot(T1, 'r--')

@@ -19,9 +19,8 @@ class OrthosisAgent(object):
   def act(self, observation, reward, done):
     # Add code here
     # TRY CROSS ENTROPY?
-    act = self.action_space.sample() if len(
-      self.action_space
-    ) == 1 else np.array(
+    act = self.action_space[0].sample(
+    ) if self.action_space.size == 1 else np.array(
       [self.action_space[0].sample(),
        self.action_space[1].sample()]
     )
@@ -63,6 +62,7 @@ if __name__ == '__main__':
   done = False
 
   fig = plt.figure()
+  env.set_exclusive_traj(1)
 
   for i in range(episode_count):
     ob = env.reset()
@@ -107,7 +107,7 @@ if __name__ == '__main__':
 
       # Call plotting every 100 counts,
       # can increase this if performace is slow
-      if plot_counter % 500 == 0:
+      if plot_counter % 1000 == 0:
 
         ax1.plot(J1, 'r')
         ax1.plot(J2, 'b')

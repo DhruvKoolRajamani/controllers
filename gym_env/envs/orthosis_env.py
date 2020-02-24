@@ -20,8 +20,8 @@ class OrthosisEnv(Orthosis, core.Env):
 
   # MODIFY THIS TO CHANGE THE RESPONSE. A SMALLER VALUE WILL MAKE IT SMOOTHER
   # AND SHOW MORE STEPS. LARGER VALUE WILL MAKE IT MORE STIFF.
-  dt = 1e-4
-  AVAIL_TORQUE = [-0.02, 0., +0.02]
+  dt = 1e-6
+  AVAIL_TORQUE = [-0.002, 0., +0.002]
 
   torque_noise_max = 0.
 
@@ -29,7 +29,7 @@ class OrthosisEnv(Orthosis, core.Env):
   domain_fig = None
   actions_num = 3
 
-  def __init__(self, x0=[0., 0., 0., 0.], input_shape=(2, 1)):
+  def __init__(self, x0=[0., 0., 0., 0.], input_shape=(1, 1)):
     """
         Initialize the class with the specific params
       *x0*
@@ -71,7 +71,7 @@ class OrthosisEnv(Orthosis, core.Env):
     self.traj = np.zeros((4,))
 
     # Set higher number of states to be checked for a reward
-    self.past_max = 20000
+    self.past_max = 2000
 
     # store at least past_max past values of trajectories and states
     self.past_trajectories = np.zeros((self.past_max, 4))
@@ -81,31 +81,22 @@ class OrthosisEnv(Orthosis, core.Env):
       self.past_error = np.zeros((self.past_max, 1))
     else:
       self.past_error = np.zeros((self.past_max, 2))
-      print(self.past_error.shape)
     self.past_count = 0
 
     self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
-    # Scaling factor for frequency
-    self.scale = 1e3
-
     # Define 1 or two possible action spaces if input is 1,1 or 2,1
     self.action_space = None
+
     if self.input_shape == (1, 1):
-      self.action_space = spaces.Discrete(3)
+      self.action_space = np.array([spaces.Discrete(3)])
     else:
       self.action_space = np.array([spaces.Discrete(3), spaces.Discrete(3)])
 
     self.state = x0
-    self.traj_coeffs = np.array(
-      [
-        (self.JOINT_LIMITS_1[1] - self.JOINT_LIMITS_1[0]) / 10,
-        (self.JOINT_LIMITS_2[1] - self.JOINT_LIMITS_2[0]) / 10
-      ]
-    ).reshape(2,
-              )
-
     self.seed()
+
+    return
 
   def seed(self, seed=None):
     self.np_random, seed = seeding.np_random(seed)
@@ -158,10 +149,11 @@ class OrthosisEnv(Orthosis, core.Env):
                      4),
         axis=0
       )
-      self.past_error = self.past_error[1:, :]
       if self.input_shape == (1, 1):
+        self.past_error = self.past_error[1:]
         self.past_error = np.append(self.past_error, err)
       else:
+        self.past_error = self.past_error[1:, :]
         self.past_error = np.append(self.past_error, err.reshape(1, 2), axis=0)
 
     return
@@ -180,14 +172,21 @@ class OrthosisEnv(Orthosis, core.Env):
 
     err = None
     if self.input_shape == (1, 1):
-      err = error[0] / max_joint_error[0] + error[1] / max_joint_error[1]
+      if self.exclusive_traj == 1:
+        err = 0.1 * error[0] / max_joint_error[0] + 2 * error[
+          1] / max_joint_error[1]
+      elif self.exclusive_traj == 2:
+        err = 2 * error[0] / max_joint_error[0] + 0.1 * error[
+          1] / max_joint_error[1]
+      else:
+        err = error[0] / max_joint_error[0] + error[1] / max_joint_error[1]
     else:
       err = np.array(
         [error[0] / max_joint_error[0],
          error[1] / max_joint_error[1]]
       )
     # print(err)
-    rew = 1 - np.absolute(err)**0.5
+    rew = 1 - np.abs(np.absolute(err))**0.25
 
     return rew, err
 
@@ -220,7 +219,7 @@ class OrthosisEnv(Orthosis, core.Env):
 
     reward, err = self._state_error(traj, dx)
 
-    self.past_state_pushback(traj, dx, err)
+    self.past_state_pushback(traj, dx, reward)
 
     terminal = self._terminal(dx)
     if self.input_shape == (1, 1):
@@ -242,12 +241,14 @@ class OrthosisEnv(Orthosis, core.Env):
       mean = None
 
       if self.input_shape == (1, 1):
-        thresh = 0.001
-        mean = np.absolute(np.mean(self.past_error))
-        mean = mean - thresh
-        if mean > 0:
-          return False
-        else:
+        # thresh = 0.002
+        # mean = np.absolute(np.mean(self.past_error))
+        # mean = mean - thresh
+        # if mean > 0:
+        #   return False
+        # else:
+        #   return True
+        if np.all(self.past_error):
           return True
       else:
         thresh = np.array([0.1, 0.1])

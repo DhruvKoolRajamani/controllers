@@ -57,21 +57,47 @@ class Orthosis(object):
     self.state = self.state0
 
     self.full_state = {}
+    self.exclusive_traj = None
+
+    # Scaling factor for frequency
+    self.scale = 1
 
     # Join Limits
     # [MIN_POS, MAX_POS, MIN_VEL, MAX_VEL]
+    # self.JOINT_LIMITS_1 = np.array(
+    #   [0.,
+    #    55 * pi / 180,
+    #    -(55 * pi / 180) * 1e5 / 2,
+    #    (55*pi/180) * 1e5 / 2]
+    # )
+    # self.JOINT_LIMITS_2 = np.array(
+    #   [0.,
+    #    80 * pi / 180,
+    #    -(80 * pi / 180) * 1e5 / 2,
+    #    (80*pi/180) * 1e5 / 2]
+    # )
     self.JOINT_LIMITS_1 = np.array(
       [0.,
        55 * pi / 180,
-       -(55 * pi / 180) * 1e5 / 2,
-       (55*pi/180) * 1e5 / 2]
+       -1487.5 * self.scale,
+       1487.5 * self.scale]
     )
     self.JOINT_LIMITS_2 = np.array(
       [0.,
        80 * pi / 180,
-       -(80 * pi / 180) * 1e5 / 2,
-       (80*pi/180) * 1e5 / 2]
+       -1487.5 * self.scale,
+       1487.5 * self.scale]
     )
+    self.TAU_LIMITS_1 = np.array([-6.818 * self.scale, 6.818 * self.scale])
+    self.TAU_LIMITS_2 = np.array([-6.818 * self.scale, 6.818 * self.scale])
+
+    self.traj_coeffs = np.array(
+      [
+        (self.JOINT_LIMITS_1[1] - self.JOINT_LIMITS_1[0]) / 10,
+        (self.JOINT_LIMITS_2[1] - self.JOINT_LIMITS_2[0]) / 10
+      ]
+    ).reshape(2,
+              )
 
     return
 
@@ -98,6 +124,23 @@ class Orthosis(object):
 
     return trajectory
 
+  def set_exclusive_traj(self, joint):
+    """ Set joint for exclusive trajectory """
+
+    j1_des = self.traj_coeffs[0]
+    j2_des = self.traj_coeffs[1]
+
+    if joint == 1:
+      self.exclusive_traj = 1
+      j2_des = 0.
+    else:
+      self.exclusive_traj = 2
+      j1_des = 0.
+
+    self.traj_coeffs = np.array([j1_des, j2_des])
+
+    return
+
   def _state_error(self, states=[0., 0., 0., 0.], trajectory=[0., 0., 0., 0.]):
     """ """
 
@@ -115,17 +158,16 @@ class Orthosis(object):
 
     i = 0.0
     count = 0
-    scale = 1e3
-    Kp = 1 * np.eye(2) * scale
+    Kp = 1 * np.eye(2) * self.scale
     Kv = 1e-2 * Kp
 
-    traj_coeffs = np.array(
-      [
-        (self.JOINT_LIMITS_1[1] - self.JOINT_LIMITS_1[0]) / 10,
-        (self.JOINT_LIMITS_2[1] - self.JOINT_LIMITS_2[0]) / 10
-      ]
-    ).reshape(2,
-              )
+    # traj_coeffs = np.array(
+    #   [
+    #     (self.JOINT_LIMITS_1[1] - self.JOINT_LIMITS_1[0]) / 10,
+    #     (self.JOINT_LIMITS_2[1] - self.JOINT_LIMITS_2[0]) / 10
+    #   ]
+    # ).reshape(2,
+    #           )
     # traj_coeffs = np.array([0.6982 / 5, 0.4364 / 5, 3.49 / 5, 2.18 / 5])
 
     U1 = []
@@ -139,11 +181,13 @@ class Orthosis(object):
     t = []
     T = []
 
+    self.set_exclusive_traj(1)
+
     traj = self._desired_trajectory(
       t=0,
-      coeffs=traj_coeffs,
+      coeffs=self.traj_coeffs,
       traj_type='sin',
-      frequency=10 * scale,
+      frequency=10 * self.scale,
       stiff_traj=False
     )
     self.state = traj
@@ -155,14 +199,17 @@ class Orthosis(object):
       # u = -(1 * self.error[:2] + 0.01 * self.error[2:4])
       traj = self._desired_trajectory(
         t=i,
-        coeffs=traj_coeffs,
+        coeffs=self.traj_coeffs,
         traj_type='sin',
-        frequency=10 * scale,
+        frequency=10 * self.scale,
         stiff_traj=False
       )
 
       err = self._state_error(dx, traj)
       u = (Kp.dot(err[:2].reshape(2, 1)) + Kv.dot(err[2:].reshape(2, 1)))
+
+      if self.input_shape == (1, 1):
+        u = u[1, 0]
 
       prev_time, dx = self.step(u, self.timestep)
 
@@ -180,7 +227,7 @@ class Orthosis(object):
       i += prev_time
       count += 1
 
-      if count % 100 == 0:
+      if count % 1000 == 0:
         plt.plot(J1, 'r')
         plt.plot(J2, 'b')
         plt.plot(T1, 'r--')
@@ -219,9 +266,12 @@ class Orthosis(object):
     dx = None
 
     if self.input_shape == (1, 1):
+      torque = bound(torque, self.TAU_LIMITS_1[0], self.TAU_LIMITS_1[1])
       tau = np.array([0., torque])
       prev_state = np.append(s, tau)  # prev state with torque
     else:
+      torque[0] = bound(torque[0], self.TAU_LIMITS_1[0], self.TAU_LIMITS_1[1])
+      torque[1] = bound(torque[1], self.TAU_LIMITS_2[0], self.TAU_LIMITS_2[1])
       prev_state = np.append(
         s,
         np.array(torque).reshape(1,
@@ -246,10 +296,10 @@ class Orthosis(object):
     dx = dx[:4]
 
     # Consider changing to bound bound bound bound
-    # dx[0] = wrap(dx[0], self.JOINT_LIMITS_1[0], self.JOINT_LIMITS_1[1])
-    # dx[1] = wrap(dx[1], self.JOINT_LIMITS_2[0], self.JOINT_LIMITS_2[1])
-    # dx[2] = bound(dx[2], self.JOINT_LIMITS_1[2], self.JOINT_LIMITS_1[3])
-    # dx[3] = bound(dx[3], self.JOINT_LIMITS_2[2], self.JOINT_LIMITS_2[3])
+    dx[0] = bound(dx[0], self.JOINT_LIMITS_1[0], self.JOINT_LIMITS_1[1])
+    dx[1] = bound(dx[1], self.JOINT_LIMITS_2[0], self.JOINT_LIMITS_2[1])
+    dx[2] = bound(dx[2], self.JOINT_LIMITS_1[2], self.JOINT_LIMITS_1[3])
+    dx[3] = bound(dx[3], self.JOINT_LIMITS_2[2], self.JOINT_LIMITS_2[3])
 
     cnt = self.count
     self.count = 0.
@@ -298,10 +348,14 @@ class Orthosis(object):
     # IF NON PD ADD FUNCTION HERE FOR FORWARD PASS
 
     ds = np.zeros(s.shape)
-    ds[0] = s[2]
-    ds[1] = s[3]
-    mass_mat, cor_mat, grav_mat, stiffness = self.state_dynamics(s)
-    ds[2:] = np.linalg.solve(mass_mat, u - stiffness).reshape(2,)
+    # ds[0] = s[2]
+    # ds[1] = s[3]
+    # mass_mat, cor_mat, grav_mat, stiffness = self.state_dynamics(s)
+    # ds[2:] = np.linalg.solve(mass_mat, u - stiffness).reshape(2,)
+
+    ds = self.simple_state_dynamics(s, u)
+
+    # self.exclusive_traj
 
     self.count += t
 
@@ -313,31 +367,212 @@ class Orthosis(object):
 
     return y
 
+  def simple_state_dynamics(self, s, u):
+
+    x1 = s[0]
+    x2 = s[1]
+    x3 = s[2]
+    x4 = s[3]
+
+    dx1 = 0.
+    dx2 = 0.
+    dx3 = 0.
+    dx4 = 0.
+
+    if self.exclusive_traj == 2:
+      # Joint 1 is locked
+      x3 = 0.
+      dx3 = 0.
+
+    # Mass Matrix
+    m11 = 1.38e-5 * cos(x2) - 6.04e-6 * cos(x1)**2 + 6.04e-6 * cos(
+      x1
+    )**2 * cos(x2)**2 - 7.68e-6 * cos(x1) * sin(x1) * sin(x2) - 8.38e-6 * cos(
+      x1
+    ) * cos(x2) * sin(x1) * sin(x2) + 2.33e-5
+    m12 = 3.04e-6 * cos(x2) - 4.19e-6 * cos(x1)**2 - 4.19e-6 * cos(
+      x2
+    )**2 + 3.84e-6 * cos(x1)**2 * cos(x2) + 8.38e-6 * cos(x1)**2 * cos(
+      x2
+    )**2 - 6.04e-6 * cos(x1) * cos(x2) * sin(x1) * sin(x2) + 7.63e-6
+    m21 = 4.96e-6 * cos(x2) + 2.1e-6 * cos(2.0 * x1) * (
+      2.0 * cos(x2)**2 - 1.0
+    ) + 1.92e-6 * cos(2.0 * x1) * cos(x2) + 2.0e-39 * sin(
+      2.0 * x1
+    ) * sin(x2) - 3.02e-6 * sin(2.0 * x1) * cos(x2) * sin(x2) + 5.53e-6
+    m22 = 6.04e-6 * cos(x1)**2 * cos(x2)**2 - 6.04e-6 * cos(
+      x2
+    )**2 - 8.38e-6 * cos(x1) * cos(x2) * sin(x1) * sin(x2) + 7.63e-6
+
+    # Stiffness + Gravity
+    c11 = 0.00157 * sin(x1) * sin(x2) - 0.00157 * cos(x1) * cos(
+      x2
+    ) - 0.00352 * cos(x1) + 4.53e-6 * x3**2 * sin(
+      2.0 * x1
+    ) + 1.51e-6 * x4**2 * sin(2.0 * x1) - 6.29e-6 * x3**2 * cos(2.0 * x1) * sin(
+      2.0 * x2
+    ) - 4.53e-6 * x3**2 * cos(2.0 * x2) * sin(2.0 * x1) + 2.1e-6 * x4**2 * cos(
+      2.0 * x1
+    ) * sin(2.0 * x2) + 1.51e-6 * x4**2 * cos(2.0 * x2) * sin(
+      2.0 * x1
+    ) - 1.15e-5 * x3**2 * cos(2.0 * x1) * sin(x2) - 3.02e-6 * x3 * x4 * cos(
+      2.0 * x1
+    ) * sin(2.0 * x2) - 4.19e-6 * x3 * x4 * cos(2.0 * x2) * sin(
+      2.0 * x1
+    ) - 3.84e-6 * x3 * x4 * sin(2.0 * x1) * cos(x2)
+    c21 = 6.88e-6 * x3**2 * sin(x2) - 0.00157 * cos(
+      x1
+    ) * cos(x2) + 0.00157 * sin(x1) * sin(x2) + 1.51e-6 * x3**2 * sin(
+      2.0 * x2
+    ) + 4.53e-6 * x4**2 * sin(
+      2.0 * x2
+    ) - 4.96e-6 * x3 * x4 * sin(x2) + 1.51e-6 * x3**2 * cos(2.0 * x1) * sin(
+      2.0 * x2
+    ) + 2.1e-6 * x3**2 * cos(2.0 * x2) * sin(2.0 * x1) - 4.53e-6 * x4**2 * cos(
+      2.0 * x1
+    ) * sin(2.0 * x2) - 6.29e-6 * x4**2 * cos(2.0 * x2) * sin(
+      2.0 * x1
+    ) + 1.92e-6 * x3**2 * sin(2.0 * x1) * cos(x2) - 4.19e-6 * x3 * x4 * cos(
+      2.0 * x1
+    ) * sin(2.0 * x2) - (3.02e-6 * x3 * x4 * cos(2.0 * x2) * sin(2.0 * x1)
+                         ) - (1.92e-6 * x3 * x4 * cos(2.0 * x1) * sin(x2))
+
+    stiffness_relaxed_coeffs = np.array(
+      [
+        0,
+        -1.4724e-14,
+        7.2021e-11,
+        -1.5778e-7,
+        1.0758e-4,
+        0.14548,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3.6689e-9,
+        -6.6466e-7,
+        4.3944e-5,
+        -1.267e-3,
+        1.3425e-2,
+        3.056e-2
+      ]
+    ).reshape(2,
+              12)
+    stiffness_extended_coeffs = np.array(
+      [
+        2.4553e-9,
+        -7.4367e-7,
+        8.1609e-5,
+        -3.9209e-3,
+        6.6136e-2,
+        0.34106,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        -1.565e-9,
+        3.4856e-7,
+        -2.1952e-5,
+        2.9395e-4,
+        3.0018e-3,
+        0.23896
+      ]
+    ).reshape(2,
+              12)
+    stiffness_states = np.array(
+      [
+        (x1 * (180/pi))**5,
+        (x1 * (180/pi))**4,
+        (x1 * (180/pi))**3,
+        (x1 * (180/pi))**2,
+        (x1 * (180/pi)),
+        1,
+        (x2 * (180/pi))**5,
+        (x2 * (180/pi))**4,
+        (x2 * (180/pi))**3,
+        (x2 * (180/pi))**2,
+        (x2 * (180/pi)),
+        1
+      ]
+    ).reshape(12,
+              1)
+    mass_mat = np.append([[m11, m12]], [[m21, m22]]).reshape(2, 2)
+    cor_mat = np.append([[c11]], [[c21]]).reshape(2, 1)
+    stiffness = stiffness_relaxed_coeffs.dot(stiffness_states)
+
+    dx = None
+
+    if self.exclusive_traj == 1:
+      # Joint 1 is locked
+      dx1 = x3
+      dx2 = x4
+      dx3 = (
+        u[1,
+          0] - (c21 + stiffness[1,
+                                0]) - ((c11 + stiffness[0,
+                                                        0]) / m12)
+      ) / (
+        m21 - (m22*m11) / m12
+      )
+      dx4 = u[1, 0]
+      dx = np.array([dx1, dx2, dx3, dx4])
+    elif self.exclusive_traj == 2:
+      dx1 = x3
+      dx2 = x4
+      dx3 = 0.
+      dx4 = u[1, 0] / m22 - (c21 + stiffness[1, 0]) / m22
+      dx = np.array([dx1, dx2, dx3, dx4])
+    else:
+      dx = np.linalg.solve(mass_mat, u - stiffness).reshape(2,)
+
+    return dx
+
   # Consider changing dynamics
   def state_dynamics(self, s):
+
+    x1 = s[0]
+    x2 = s[1]
+    x3 = s[2]
+    x4 = s[3]
+
     mass_mat = np.array(
       [
         (
-          1.38e-5 * cos(s[0]) - 6.04e-6 * cos(s[0])**2 +
-          6.04e-6 * cos(s[0])**2 * cos(s[0])**2 -
-          7.68e-6 * cos(s[0]) * sin(s[0]) * sin(s[0]) -
-          8.38e-6 * cos(s[0]) * cos(s[0]) * sin(s[0]) * sin(s[0]) + 2.33e-5
+          1.38e-5 * cos(x2) - 6.04e-6 * cos(x1)**2 +
+          6.04e-6 * cos(x1)**2 * cos(x2)**2 -
+          7.68e-6 * cos(x1) * sin(x1) * sin(x2) -
+          8.38e-6 * cos(x1) * cos(x2) * sin(x1) * sin(x2) + 2.33e-5
         ),
         (
-          3.04e-6 * cos(s[0]) - 4.19e-6 * cos(s[0])**2 -
-          4.19e-6 * cos(s[0])**2 + 3.84e-6 * cos(s[0])**2 * cos(s[0]) +
-          8.38e-6 * cos(s[0])**2 * cos(s[0])**2 -
-          6.04e-6 * cos(s[0]) * cos(s[0]) * sin(s[0]) * sin(s[0]) + 7.63e-6
+          3.04e-6 * cos(x2) - 4.19e-6 * cos(x1)**2 - 4.19e-6 * cos(x2)**2 +
+          3.84e-6 * cos(x1)**2 * cos(x2) + 8.38e-6 * cos(x1)**2 * cos(x2)**2 -
+          6.04e-6 * cos(x1) * cos(x2) * sin(x1) * sin(x2) + 7.63e-6
         ),
         (
-          4.96e-6 * cos(s[0]) + 2.1e-6 * cos(2.0 * s[0]) *
-          (2.0 * cos(s[0])**2 - 1.0) + 1.92e-6 * cos(2.0 * s[0]) * cos(s[0]) +
-          2.0e-39 * sin(2.0 * s[0]) * sin(s[0]) -
-          3.02e-6 * sin(2.0 * s[0]) * cos(s[0]) * sin(s[0]) + 5.53e-6
+          4.96e-6 * cos(x2) + 2.1e-6 * cos(2.0 * x1) *
+          (2.0 * cos(x2)**2 - 1.0) + 1.92e-6 * cos(2.0 * x1) * cos(x2) +
+          2.0e-39 * sin(2.0 * x1) * sin(x2) -
+          3.02e-6 * sin(2.0 * x1) * cos(x2) * sin(x2) + 5.53e-6
         ),
         (
-          6.04e-6 * cos(s[0])**2 * cos(s[0])**2 - 6.04e-6 * cos(s[0])**2 -
-          8.38e-6 * cos(s[0]) * cos(s[0]) * sin(s[0]) * sin(s[0]) + 7.63e-6
+          6.04e-6 * cos(x1)**2 * cos(x2)**2 - 6.04e-6 * cos(x2)**2 -
+          8.38e-6 * cos(x1) * cos(x2) * sin(x1) * sin(x2) + 7.63e-6
         )
       ]
     ).reshape((2,
@@ -345,68 +580,34 @@ class Orthosis(object):
     cor_mat = np.array(
       [
         (
-          4.53e-6 * s[2]**2 * sin(2.0 * s[0]) +
-          1.51e-6 * s[3]**2 * sin(2.0 * s[0]) -
-          6.29e-6 * s[2]**2 * cos(2.0 * s[0]) * sin(2.0 * s[0]) -
-          4.53e-6 * s[2]**2 * cos(2.0 * s[0]) * sin(2.0 * s[0]) +
-          2.1e-6 * s[3]**2 * cos(2.0 * s[0]) * sin(2.0 * s[0]) +
-          1.51e-6 * s[3]**2 * cos(2.0 * s[0]) * sin(2.0 * s[0]) -
-          1.15e-5 * s[2]**2 * cos(2.0 * s[0]) * sin(s[0]) -
-          3.02e-6 * s[2] * s[3] * cos(2.0 * s[0]) * sin(2.0 * s[0]) -
-          4.19e-6 * s[2] * s[3] * cos(2.0 * s[0]) * sin(2.0 * s[0]) -
-          3.84e-6 * s[2] * s[3] * sin(2.0 * s[0]) * cos(s[0])
+          4.53e-6 * x3**2 * sin(2.0 * x1) + 1.51e-6 * x4**2 * sin(2.0 * x1) -
+          6.29e-6 * x3**2 * cos(2.0 * x1) * sin(2.0 * x2) -
+          4.53e-6 * x3**2 * cos(2.0 * x2) * sin(2.0 * x1) +
+          2.1e-6 * x4**2 * cos(2.0 * x1) * sin(2.0 * x2) +
+          1.51e-6 * x4**2 * cos(2.0 * x2) * sin(2.0 * x1) -
+          1.15e-5 * x3**2 * cos(2.0 * x1) * sin(x2) -
+          3.02e-6 * x3 * x4 * cos(2.0 * x1) * sin(2.0 * x2) -
+          4.19e-6 * x3 * x4 * cos(2.0 * x2) * sin(2.0 * x1) -
+          3.84e-6 * x3 * x4 * sin(2.0 * x1) * cos(x2)
         ),
         (
-          6.88e-6 * s[2]**2 * sin(s[0]) + 1.51e-6 * s[2]**2 * sin(2.0 * s[0]) +
-          4.53e-6 * s[3]**2 * sin(2.0 * s[0]) -
-          4.96e-6 * s[2] * s[3] * sin(s[0]) +
-          1.51e-6 * s[2]**2 * cos(2.0 * s[0]) * sin(2.0 * s[0]) +
-          2.1e-6 * s[2]**2 * cos(2.0 * s[0]) * sin(2.0 * s[0]) -
-          4.53e-6 * s[3]**2 * cos(2.0 * s[0]) * sin(2.0 * s[0]) -
-          6.29e-6 * s[3]**2 * cos(2.0 * s[0]) * sin(2.0 * s[0]) +
-          1.92e-6 * s[2]**2 * sin(2.0 * s[0]) * cos(s[0]) -
-          4.19e-6 * s[2] * s[3] * cos(2.0 * s[0]) * sin(2.0 * s[0]) -
-          3.02e-6 * s[2] * s[3] * cos(2.0 * s[0]) * sin(2.0 * s[0]) -
-          1.92e-6 * s[2] * s[3] * cos(2.0 * s[0]) * sin(s[0])
-        )
-      ]
-    ).reshape((2,
-               1))
-    cor_mat = np.array(
-      [
-        (
-          4.53e-6 * s[2]**2 * sin(2.0 * s[0]) +
-          1.51e-6 * s[3]**2 * sin(2.0 * s[0]) -
-          6.29e-6 * s[2]**2 * cos(2.0 * s[0]) * sin(2.0 * s[0]) -
-          4.53e-6 * s[2]**2 * cos(2.0 * s[0]) * sin(2.0 * s[0]) +
-          2.1e-6 * s[3]**2 * cos(2.0 * s[0]) * sin(2.0 * s[0]) +
-          1.51e-6 * s[3]**2 * cos(2.0 * s[0]) * sin(2.0 * s[0]) -
-          1.15e-5 * s[2]**2 * cos(2.0 * s[0]) * sin(s[0]) -
-          3.02e-6 * s[2] * s[3] * cos(2.0 * s[0]) * sin(2.0 * s[0]) -
-          4.19e-6 * s[2] * s[3] * cos(2.0 * s[0]) * sin(2.0 * s[0]) -
-          3.84e-6 * s[2] * s[3] * sin(2.0 * s[0]) * cos(s[0])
-        ),
-        (
-          6.88e-6 * s[2]**2 * sin(s[0]) + 1.51e-6 * s[2]**2 * sin(2.0 * s[0]) +
-          4.53e-6 * s[3]**2 * sin(2.0 * s[0]) -
-          4.96e-6 * s[2] * s[3] * sin(s[0]) +
-          1.51e-6 * s[2]**2 * cos(2.0 * s[0]) * sin(2.0 * s[0]) +
-          2.1e-6 * s[2]**2 * cos(2.0 * s[0]) * sin(2.0 * s[0]) -
-          4.53e-6 * s[3]**2 * cos(2.0 * s[0]) * sin(2.0 * s[0]) -
-          6.29e-6 * s[3]**2 * cos(2.0 * s[0]) * sin(2.0 * s[0]) +
-          1.92e-6 * s[2]**2 * sin(2.0 * s[0]) * cos(s[0]) -
-          4.19e-6 * s[2] * s[3] * cos(2.0 * s[0]) * sin(2.0 * s[0]) -
-          3.02e-6 * s[2] * s[3] * cos(2.0 * s[0]) * sin(2.0 * s[0]) -
-          1.92e-6 * s[2] * s[3] * cos(2.0 * s[0]) * sin(s[0])
+          6.88e-6 * x3**2 * sin(x2) + 1.51e-6 * x3**2 * sin(2.0 * x2) +
+          4.53e-6 * x4**2 * sin(2.0 * x2) - 4.96e-6 * x3 * x4 * sin(x2) +
+          1.51e-6 * x3**2 * cos(2.0 * x1) * sin(2.0 * x2) +
+          2.1e-6 * x3**2 * cos(2.0 * x2) * sin(2.0 * x1) -
+          4.53e-6 * x4**2 * cos(2.0 * x1) * sin(2.0 * x2) -
+          6.29e-6 * x4**2 * cos(2.0 * x2) * sin(2.0 * x1) +
+          1.92e-6 * x3**2 * sin(2.0 * x1) * cos(x2) -
+          4.19e-6 * x3 * x4 * cos(2.0 * x1) * sin(2.0 * x2) -
+          3.02e-6 * x3 * x4 * cos(2.0 * x2) * sin(2.0 * x1) -
+          1.92e-6 * x3 * x4 * cos(2.0 * x1) * sin(x2)
         )
       ]
     ).reshape((2,
                1))
     grav_mat = np.array(
-      [
-        (-0.00157 * cos(s[0] + s[0]) - 0.00352 * cos(s[0])),
-        (-0.00157 * cos(s[0] + s[0]))
-      ]
+      [-0.00157 * cos(x1 + x2) - 0.00352 * cos(x1),
+       -0.00157 * cos(x1 + x2)]
     ).reshape((2,
                1))
 
@@ -470,17 +671,17 @@ class Orthosis(object):
               12)
     stiffness_states = np.array(
       [
-        (s[0] * (180/pi))**5,
-        (s[0] * (180/pi))**4,
-        (s[0] * (180/pi))**3,
-        (s[0] * (180/pi))**2,
-        (s[0] * (180/pi)),
+        (x1 * (180/pi))**5,
+        (x1 * (180/pi))**4,
+        (x1 * (180/pi))**3,
+        (x1 * (180/pi))**2,
+        (x1 * (180/pi)),
         1,
-        (s[1] * (180/pi))**5,
-        (s[1] * (180/pi))**4,
-        (s[1] * (180/pi))**3,
-        (s[1] * (180/pi))**2,
-        (s[1] * (180/pi)),
+        (x2 * (180/pi))**5,
+        (x2 * (180/pi))**4,
+        (x2 * (180/pi))**3,
+        (x2 * (180/pi))**2,
+        (x2 * (180/pi)),
         1
       ]
     ).reshape(12,
