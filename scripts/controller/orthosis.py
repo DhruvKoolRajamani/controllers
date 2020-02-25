@@ -88,6 +88,18 @@ class Orthosis(object):
        -1487.5 * self.scale,
        1487.5 * self.scale]
     )
+    # self.JOINT_LIMITS_1 = np.array(
+    #   [-55 * pi / 180,
+    #    0.,
+    #    -1487.5 * self.scale,
+    #    1487.5 * self.scale]
+    # )
+    # self.JOINT_LIMITS_2 = np.array(
+    #   [-80 * pi / 180,
+    #    0.,
+    #    -1487.5 * self.scale,
+    #    1487.5 * self.scale]
+    # )
     self.TAU_LIMITS_1 = np.array([-6.818 * self.scale, 6.818 * self.scale])
     self.TAU_LIMITS_2 = np.array([-6.818 * self.scale, 6.818 * self.scale])
 
@@ -108,18 +120,20 @@ class Orthosis(object):
             0.],
     traj_type='sin',
     frequency=10,
-    stiff_traj=False
+    stiff_traj=False,
+    alpha=0,
+    beta=0
   ):
     """  """
 
     trajectory = np.zeros((4,))
     if not stiff_traj:
       if traj_type == 'sin':
-        trajectory[:2] = coeffs * (sin(frequency * t) + 1)
-        trajectory[2:] = 2 * frequency * coeffs * cos(frequency * t)
+        trajectory[:2] = coeffs * (sin(frequency * t + alpha) + 1 + beta)
+        trajectory[2:] = 2 * frequency * coeffs * cos(frequency * t + alpha)
     else:
       if traj_type == 'sin':
-        trajectory[:2] = coeffs[:2] * (sin(frequency * t) + 1)
+        trajectory[:2] = coeffs[:2] * (sin(frequency * t + alpha) + 1 + beta)
         trajectory[2:] = 2 * coeffs[:2] * cos(frequency * t)
 
     return trajectory
@@ -147,6 +161,7 @@ class Orthosis(object):
     # state_error = np.zeros((4,))
     if self.model == 'pd':
       state_error = trajectory - states[:4]
+      print(state_error)
     elif self.model == 'adaptive':
       state_error = (states[:4] - trajectory)
     else:
@@ -158,7 +173,7 @@ class Orthosis(object):
 
     i = 0.0
     count = 0
-    Kp = 1 * np.eye(2) * self.scale
+    Kp = 100 * np.eye(2) * self.scale
     Kv = 1e-2 * Kp
 
     # traj_coeffs = np.array(
@@ -191,6 +206,7 @@ class Orthosis(object):
       stiff_traj=False
     )
     self.state = traj
+    self.state[2:] = 0.
     dx = self.state
 
     plt.ion()
@@ -209,7 +225,7 @@ class Orthosis(object):
       u = (Kp.dot(err[:2].reshape(2, 1)) + Kv.dot(err[2:].reshape(2, 1)))
 
       if self.input_shape == (1, 1):
-        u = u[1, 0]
+        u = u[0, 0]
 
       prev_time, dx = self.step(u, self.timestep)
 
@@ -227,7 +243,7 @@ class Orthosis(object):
       i += prev_time
       count += 1
 
-      if count % 1000 == 0:
+      if count % 100 == 0:
         plt.plot(J1, 'r')
         plt.plot(J2, 'b')
         plt.plot(T1, 'r--')
@@ -379,10 +395,13 @@ class Orthosis(object):
     dx3 = 0.
     dx4 = 0.
 
-    if self.exclusive_traj == 2:
-      # Joint 1 is locked
-      x3 = 0.
-      dx3 = 0.
+    # Testing stiffness only
+    # u = np.array([0, 0]).reshape(2, 1)
+
+    # if self.exclusive_traj == 2:
+    #   # Joint 1 is locked
+    #   x3 = 0.
+    #   dx3 = 0.
 
     # Mass Matrix
     m11 = 1.38e-5 * cos(x2) - 6.04e-6 * cos(x1)**2 + 6.04e-6 * cos(
@@ -436,6 +455,12 @@ class Orthosis(object):
       2.0 * x1
     ) * sin(2.0 * x2) - (3.02e-6 * x3 * x4 * cos(2.0 * x2) * sin(2.0 * x1)
                          ) - (1.92e-6 * x3 * x4 * cos(2.0 * x1) * sin(x2))
+
+    grav_mat = np.array(
+      [-0.00157 * cos(x1 + x2) - 0.00352 * cos(x1),
+       -0.00157 * cos(x1 + x2)]
+    ).reshape((2,
+               1))
 
     stiffness_relaxed_coeffs = np.array(
       [
@@ -495,19 +520,22 @@ class Orthosis(object):
       ]
     ).reshape(2,
               12)
+
+    e1 = self.JOINT_LIMITS_1[0] - x1
+    e2 = self.JOINT_LIMITS_2[0] - x2
     stiffness_states = np.array(
       [
-        (x1 * (180/pi))**5,
-        (x1 * (180/pi))**4,
-        (x1 * (180/pi))**3,
-        (x1 * (180/pi))**2,
-        (x1 * (180/pi)),
+        (e1 * (180/pi))**5,
+        (e1 * (180/pi))**4,
+        (e1 * (180/pi))**3,
+        (e1 * (180/pi))**2,
+        (e1 * (180/pi)),
         1,
-        (x2 * (180/pi))**5,
-        (x2 * (180/pi))**4,
-        (x2 * (180/pi))**3,
-        (x2 * (180/pi))**2,
-        (x2 * (180/pi)),
+        (e2 * (180/pi))**5,
+        (e2 * (180/pi))**4,
+        (e2 * (180/pi))**3,
+        (e2 * (180/pi))**2,
+        (e2 * (180/pi)),
         1
       ]
     ).reshape(12,
@@ -518,28 +546,41 @@ class Orthosis(object):
 
     dx = None
 
-    if self.exclusive_traj == 1:
-      # Joint 1 is locked
-      dx1 = x3
-      dx2 = x4
-      dx3 = (
-        u[1,
-          0] - (c21 + stiffness[1,
-                                0]) - ((c11 + stiffness[0,
-                                                        0]) / m12)
-      ) / (
-        m21 - (m22*m11) / m12
-      )
-      dx4 = u[1, 0]
-      dx = np.array([dx1, dx2, dx3, dx4])
-    elif self.exclusive_traj == 2:
-      dx1 = x3
-      dx2 = x4
-      dx3 = 0.
-      dx4 = u[1, 0] / m22 - (c21 + stiffness[1, 0]) / m22
-      dx = np.array([dx1, dx2, dx3, dx4])
-    else:
-      dx = np.linalg.solve(mass_mat, u - stiffness).reshape(2,)
+    # if self.exclusive_traj == 1:
+    #   # Joint 1 is locked
+    #   dx1 = x3
+    #   dx2 = x4
+    #   dx3 = (
+    #     u[1,
+    #       0] - (-c21 - stiffness[1,
+    #                              0]) - ((-c11 - stiffness[0,
+    #                                                       0]) / m12)
+    #   ) / (
+    #     m21 - (m22*m11) / m12
+    #   )
+    #   dx4 = u[1, 0]
+    #   dx = np.array([dx1, dx2, dx3, dx4])
+    # elif self.exclusive_traj == 2:
+    #   dx1 = x3
+    #   dx2 = x4
+    #   dx3 = 0.
+    #   dx4 = u[1, 0] / m22 - (-c21 - stiffness[1, 0]) / m22  #grav_mat[1, 0] -
+    #   dx = np.array([dx1, dx2, dx3, dx4])
+    # else:
+    # dx = np.linalg.solve(mass_mat, u - stiffness).reshape(2,)
+    dx1 = x3
+    dx2 = x4
+    dx4 = (1 / (m22 - (m21/m11) * m12)) * (
+      u[1,
+        0] - (-c21 - grav_mat[1,
+                              0] - stiffness[1,
+                                             0]) + (m21/m11) *
+      (-c11 - grav_mat[0,
+                       0] - stiffness[0,
+                                      0])
+    )
+    dx3 = -(1 / m11) * (m12*dx4 + (-c11 - grav_mat[0, 0] - stiffness[0, 0]))
+    dx = np.array([dx1, dx2, dx3, dx4])
 
     return dx
 
@@ -734,5 +775,5 @@ class Orthosis(object):
 
 if __name__ == '__main__':
   # Tests
-  orthosis = Orthosis(input_shape=(2, 1), model='pd')
+  orthosis = Orthosis(input_shape=(1, 1), model='pd')
   orthosis.generate_system()

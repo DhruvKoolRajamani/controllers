@@ -20,8 +20,8 @@ class OrthosisEnv(Orthosis, core.Env):
 
   # MODIFY THIS TO CHANGE THE RESPONSE. A SMALLER VALUE WILL MAKE IT SMOOTHER
   # AND SHOW MORE STEPS. LARGER VALUE WILL MAKE IT MORE STIFF.
-  dt = 1e-6
-  AVAIL_TORQUE = [-0.002, 0., +0.002]
+  dt = 1e-4
+  AVAIL_TORQUE = [-0.00001, 0., +0.00001]
 
   torque_noise_max = 0.
 
@@ -68,10 +68,15 @@ class OrthosisEnv(Orthosis, core.Env):
     low[2] = self.JOINT_LIMITS_1[2]
     low[3] = self.JOINT_LIMITS_2[2]
 
+    self.beta = None
+    self.prev_time = None
+
+    self.env_reset = True
+
     self.traj = np.zeros((4,))
 
     # Set higher number of states to be checked for a reward
-    self.past_max = 2000
+    self.past_max = 10000
 
     # store at least past_max past values of trajectories and states
     self.past_trajectories = np.zeros((self.past_max, 4))
@@ -104,13 +109,44 @@ class OrthosisEnv(Orthosis, core.Env):
 
   def reset(self):
     self.state = self.np_random.uniform(
-      low=0.1,
-      high=0.3 * self.JOINT_LIMITS_1[1],
+      low=np.array([0.1,
+                    0.1,
+                    0.,
+                    0.]),
+      high=np.array(
+        [0.7 * self.JOINT_LIMITS_1[1],
+         0.7 * self.JOINT_LIMITS_2[1],
+         0.,
+         0.]
+      ),
       size=(4,
             )
     )
+    th = None
+    coeff = None
+    if self.exclusive_traj == 1:
+      th = self.state[0]
+      coeff = self.traj_coeffs[0]
+    elif self.exclusive_traj == 2:
+      th = self.state[1]
+      coeff = self.traj_coeffs[1]
 
     self.traj = np.zeros((4,))
+    self.alpha = pi / 2
+    self.beta = th / coeff
+    self.prev_time = 0.
+    traj = self._desired_trajectory(
+      t=self.prev_time,
+      coeffs=self.traj_coeffs,
+      traj_type='sin',
+      frequency=10 * self.scale,
+      stiff_traj=False,
+      alpha=self.alpha,
+      beta=self.beta
+    )
+    self.traj = traj
+    self.env_reset = True
+    print(self.traj)
     self.past_trajectories = np.zeros((self.past_max, 4))
     self.past_states = np.zeros((self.past_max, 4))
     if self.input_shape == (1, 1):
@@ -119,7 +155,6 @@ class OrthosisEnv(Orthosis, core.Env):
       self.past_error = np.zeros((self.past_max, 2))
     self.past_count = 0
     self.count = 0
-    self.prev_time = 0.
 
     return self._get_ob()
 
@@ -171,13 +206,16 @@ class OrthosisEnv(Orthosis, core.Env):
     # print(error)
 
     err = None
+    i = -1
     if self.input_shape == (1, 1):
       if self.exclusive_traj == 1:
-        err = 0.1 * error[0] / max_joint_error[0] + 2 * error[
-          1] / max_joint_error[1]
+        err = error[0]
+        i = 0
+        #/ max_joint_error[0] + 2 * error[1] / max_joint_error[1]
       elif self.exclusive_traj == 2:
         err = 2 * error[0] / max_joint_error[0] + 0.1 * error[
           1] / max_joint_error[1]
+        i = 1
       else:
         err = error[0] / max_joint_error[0] + error[1] / max_joint_error[1]
     else:
@@ -186,21 +224,28 @@ class OrthosisEnv(Orthosis, core.Env):
          error[1] / max_joint_error[1]]
       )
     # print(err)
-    rew = 1 - np.abs(np.absolute(err))**0.25
+    rew = None
+    if self.prev_time < self.dt * 100:
+      rew = -np.absolute(max_joint_error[i] / 2)
+    else:
+      rew = -np.absolute(err)
 
     return rew, err
 
   def env_step(self, a, timestep=0.01):
 
-    traj = self._desired_trajectory(
-      t=self.prev_time,
-      coeffs=self.traj_coeffs,
-      traj_type='sin',
-      frequency=10 * self.scale,
-      stiff_traj=False
-    )
+    if not self.env_reset:
+      traj = self._desired_trajectory(
+        t=self.prev_time,
+        coeffs=self.traj_coeffs,
+        traj_type='sin',
+        frequency=10 * self.scale,
+        stiff_traj=False,
+        alpha=self.alpha,
+        beta=self.beta
+      )
+      self.traj = traj
 
-    self.traj = traj
     torque = None
 
     if self.input_shape == (1, 1):
@@ -217,16 +262,19 @@ class OrthosisEnv(Orthosis, core.Env):
     cnt, dx = self.step(torque, self.dt)
     self.prev_time += cnt
 
-    reward, err = self._state_error(traj, dx)
+    reward, err = self._state_error(self.traj, dx)
 
-    self.past_state_pushback(traj, dx, reward)
+    self.past_state_pushback(self.traj, dx, reward)
 
     terminal = self._terminal(dx)
     if self.input_shape == (1, 1):
       reward = reward if not terminal else 100
     else:
       reward = reward if not terminal else [100, 100]
-    print(reward)
+
+    self.env_reset = False
+    # print(reward)
+    # print(self.prev_time)
     # IF MULTI INPUT MAYBE RESET WHEN BOTH REWARDS RETURN 100 AND NOT JUST ONE
     return (self._get_ob(), reward, terminal, {})
 
@@ -241,15 +289,15 @@ class OrthosisEnv(Orthosis, core.Env):
       mean = None
 
       if self.input_shape == (1, 1):
-        # thresh = 0.002
-        # mean = np.absolute(np.mean(self.past_error))
-        # mean = mean - thresh
-        # if mean > 0:
-        #   return False
-        # else:
-        #   return True
-        if np.all(self.past_error):
+        thresh = 0.002
+        mean = np.absolute(np.mean(self.past_error))
+        mean = mean - thresh
+        if mean > 0:
+          return False
+        else:
           return True
+        # if np.all(self.past_error):
+        #   return True
       else:
         thresh = np.array([0.1, 0.1])
         mean = np.absolute(np.mean(self.past_error, axis=0))

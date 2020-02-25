@@ -119,6 +119,11 @@ if __name__ == '__main__':
         plt.show()
         plt.pause(1e-4)
 
+      # print(env.prev_time)
+      if env.prev_time >= 10:
+        plt.clf()
+        break
+
       if done:
         plt.clf()
         break

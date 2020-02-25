@@ -68,13 +68,15 @@ class AdaptiveController(Orthosis):
     Kv = 1e-1 * Kp
     decay = 0
 
-    traj_coeffs = np.array(
-      [
-        (self.JOINT_LIMITS_1[1] - self.JOINT_LIMITS_1[0]) / 10,
-        (self.JOINT_LIMITS_2[1] - self.JOINT_LIMITS_2[0]) / 10
-      ]
-    ).reshape(2,
-              )
+    # self.set_exclusive_traj(1)
+
+    # traj_coeffs = np.array(
+    #   [
+    #     (self.JOINT_LIMITS_1[1] - self.JOINT_LIMITS_1[0]) / 10,
+    #     (self.JOINT_LIMITS_2[1] - self.JOINT_LIMITS_2[0]) / 10
+    #   ]
+    # ).reshape(2,
+    #           )
 
     lam = 2 * Kp
     L = 50 * np.eye(12) * self.scale
@@ -110,7 +112,7 @@ class AdaptiveController(Orthosis):
 
     traj = self._desired_trajectory(
       t=0,
-      coeffs=traj_coeffs,
+      coeffs=self.traj_coeffs,
       traj_type='sin',
       frequency=10 * self.scale,
       stiff_traj=False
@@ -124,7 +126,7 @@ class AdaptiveController(Orthosis):
       # u = -(1 * self.error[:2] + 0.01 * self.error[2:4])
       traj = self._desired_trajectory(
         t=i,
-        coeffs=traj_coeffs,
+        coeffs=self.traj_coeffs,
         traj_type='sin',
         frequency=10 * self.scale,
         stiff_traj=False
@@ -178,11 +180,13 @@ class AdaptiveController(Orthosis):
         self.alpha += alpha_grad * decay
 
       u = Y.dot(self.alpha.reshape(12, 1)) - Kp.dot(sld)
+      u = u[1, 0]
 
       prev_time, dx = self.step(u, self.timestep)
 
-      U1.append(u[0][0])
-      U2.append(u[1][0])
+      # U1.append(u[0][0])
+      # U2.append(u[1][0])
+      U2.append(u)
       J1.append(dx[0])
       J2.append(dx[1])
       t.append(prev_time)
@@ -208,7 +212,7 @@ class AdaptiveController(Orthosis):
     t1_handle = plt.plot(T1, 'r--')
     t2_handle = plt.plot(T2, 'b--')
     plt.subplot(312)
-    u1_handle = plt.plot(U1, 'r')
+    # u1_handle = plt.plot(U1, 'r')
     u2_handle = plt.plot(U2, 'b')
     plt.subplot(313)
     e1_handle = plt.plot(E1, 'r')
@@ -221,5 +225,5 @@ class AdaptiveController(Orthosis):
 
 if __name__ == '__main__':
   # Tests
-  adaptive_controller = AdaptiveController(input_shape=(2, 1))
+  adaptive_controller = AdaptiveController(input_shape=(1, 1))
   adaptive_controller.generate_system()
