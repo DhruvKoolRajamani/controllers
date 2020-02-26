@@ -1,19 +1,19 @@
 clc; clear all; close all;
 
 syms q1 q2 dq1 dq2 pi g ddq1 ddq2 T1 T2
-I1 = [1.619e-5,  4.46e-6,    7e-8;
-          4.46e-6,  7.39e-6,  1.9e-7;
-             7e-8,   1.9e-7,  1.7e-5];
-m1 = 0.03955516;
-m2 = 0.03228749;
+% I1 = [8.53e-6,  5.6e-7,    -1.5e-7;
+%           5.6e-7,  2.26e-5,  -1.6e-7;
+%              -1.5e-7,   -1.6e-7,  1.883e-5];
+m1 = 0.05704916;
+m2 = 0.04625979;
 l1 = 0.043;
-lc1 = sqrt(0.011^2 + 0.00512716);
+lc1 = sqrt(0.00960803^2 + 0.00028241);
 l2 = 0.05604;
-lc2 = sqrt(0.01690504^2 + 0.00466182^2);
+lc2 = sqrt(0.05195307^2 + 0.00944479^2);
 
-I2 = [4.19e-6, 4.87e-6, -1e-8;
-         4.87e-6, 2.065e-5, -1e-8;
-         -1e-8, -1e-8, 2.17e-5];
+% I2 = [1.434e-5, 2.883e-5, -1.3e-7;
+%          2.883e-5, 1.36e-4, 4e-8;
+%          -1.3e-7, 4e-8, 1.44e-4];
      
 g = 9.8;
 pi = double(pi);
@@ -36,7 +36,7 @@ if size(vals) > [1,1]
     axis([-1 1 -1 1 -1 1]);
     drawnow;
 end
-T0n
+simplify(expand(Transforms(1:3,4,:)))
 
 [Jv, Jw, p02, z] = calcJacobian(Transforms, q, 'rr', vals);
 J = [Jv(:,:,n_dof); Jw(:,:,n_dof)];
@@ -52,72 +52,34 @@ CoM_Transforms(:,:,2) = (subs(CoM_Transforms(:,:,2),l2,lc2));
 
 J_CoM = [Jv_CoM(:,:,n_dof); Jw_CoM(:,:,n_dof)];
 
-%%% Calculating the Kinetic and Potential Energies
-% This hasn't been automated to keep for correctness
-% Will need to modify this to fit our design (Use the inertia matrix
-% instead of M provided by the solidworks model)
+I1 = 0.00001355 + m1*lc1^2;
+I2 = 0.00001502 + m2*lc2^2;
 
-KE = vpa(0.5*dq.'*(m(1,1)*Jv_CoM(:,:,1).'*Jv_CoM(:,:,1) + Jw_CoM(:,:,1).'*CoM_Transforms(1:3,1:3,1)*I1*CoM_Transforms(1:3,1:3,1).'*Jw_CoM(:,:,1) + ... % link 1 translational and rotational KE
-                m(2,1)*Jv_CoM(:,:,2).'*Jv_CoM(:,:,2)+ Jw_CoM(:,:,2).'*CoM_Transforms(1:3,1:3,2)*I2*CoM_Transforms(1:3,1:3,2).'*Jw_CoM(:,:,2))*dq);   % link 2 translational and rotational KE
-PE = vpa(m(1,1)*g*p_CoM(2,2) + m(2,1)*g*p_CoM(2,3));
-
-%%% 
-% Euler Lagrange Equation:
+% c1 = m1*lc1^2 + m2*l1^2 + I1;
+% c2 = m2*lc2^2;
+% c3 = m2*l1*lc2;
+% c4 = (m1*lc1 + m2*l1)*g;
+% c5 = m2*g*lc2;
 % 
-% $$F_{i} = \frac{\mathrm{d} }{\mathrm{d} t}\frac{\partial L}{\partial \dot{q_{i}}} - \frac{\partial L}{\partial q_{i}}$$
+% M = [c1+c2-2*c3*cos(q2), c2-c3*sin(q2);
+%           c2-c3*sin(q2),           c2];
 % 
-
-L = KE - PE;
-
-% Using the chain rule:
-% dLdq1 = diff(L,dq1);
-% ddLdq1 = diff(dLdq1,dq1)*ddq1 + diff(dLdq1,q1)*dq1 + ... 
-%          diff(dLdq1,dq2)*ddq2 + diff(dLdq1,q2)*dq2 + ...
-%          diff(dLdq1,dq3)*ddq3 + diff(dLdq1,q3)*dq3;
-% dLdq2 = diff(L,dq2);
-% ddLdq2 = diff(dLdq2,dq1)*ddq1 + diff(dLdq2,q1)*dq1 + ... 
-%          diff(dLdq2,dq2)*ddq2 + diff(dLdq2,q2)*dq2 + ...
-%          diff(dLdq2,dq3)*ddq3 + diff(dLdq2,q3)*dq3;
-% dLdq3 = diff(L,dq3);
-% ddLdq3 = diff(dLdq3,dq1)*ddq1 + diff(dLdq3,q1)*dq1 + ... 
-%          diff(dLdq3,dq2)*ddq2 + diff(dLdq3,q2)*dq2 + ...
-%          diff(dLdq3,dq3)*ddq3 + diff(dLdq3,q3)*dq3;
-% dLq1 = diff(L,q1);
-% dLq2 = diff(L,q2);
-% dLq3 = diff(L,q3);
+% C = [ c3*dq2*sin(q2), c3*(dq1 + dq2)*sin(q2);
+%      -c3*dq1*sin(q2),                    0 ];
 % 
-% Tau1 = ddLdq1 - dLq1;
-% Tau2 = ddLdq2 - dLq2;
-% Tau3 = ddLdq3 - dLq3;
-% Tau = [Tau1; Tau2; Tau3];
+% G = [c4*cos(q1) - c5*cos(q1+q2);
+%      -c5*cos(q1+q2)];
 
-% This function does n joints in a for loop
-for i=1:n_dof
-    dLdq(i,1) = simplify(diff(L,dq(i,1)));
-    for j=1:n_dof
-        ddLdq_mat(i,j) = simplify(diff(dLdq(i,1),dq(j,1))*ddq(j,1) + diff(dLdq(i,1),q(i,1))*dq(i,1));
-    end
-    ddLdq(i,1) = sum(ddLdq_mat(i,:));
-    dLq(i,1) = diff(L,q(i,1));
-    Tau(i,1) = ddLdq(i,1) - dLq(i,1);
-end
-Tau1 = Tau;
+M = [I1 + I2 + m2*l1^2 + 2*m2*l1*lc2*cos(q2), I2 + m2*l1*lc2*cos(q2);
+                      I2 + m2*l1*lc2*cos(q2),                    I2];
 
-% Calculating intertial matrix M by substituting ddq as 0 and dividing by ddq
-for i=1:n_dof
-    for j=1:n_dof
-        M(i,j) = simplify(expand(Tau(i,1) - subs(Tau(i,1), ddq(j,1), 0))/ddq(j,1));
-    end
-end
-
-% Calculating gravity matrix G
-G = subs(Tau, [ddq;dq], [0;0;0;0]);
-
-% Calculating the Coriolis and Centrifugal Terms V
-for i=1:n_dof
-     V(i,1) = simplify(expand(Tau(i,1) - M(i,:)*ddq - G(i)));
-end
-V = subs(V, ddq, [0;0]);
+C = [-2*m2*l1*lc2*sin(q2)*dq2, -m2*l1*lc2*sin(q2)*dq2;
+        m2*l1*lc2*sin(q2)*dq1,                     0];
+    
+G = [-m1*g*lc1*cos(q1) - m2*g*(l1*cos(q1) + lc2*cos(q1+q2));
+                                    -m2*g*lc2*cos(q1 + q2)];
+ 
+V = C*[dq1;dq2];
 
 Tau = M*ddq + V + G; % Dynamic Model
 
@@ -155,7 +117,7 @@ global tm1
 global err
 global alpha
 global act_tau
-p = 5;
+p = 4;
 tau = [];
 tm1 = [];
 err = [];
@@ -164,14 +126,19 @@ act_tau = [];
 Kp = 100*[1, 0; 0, 1];
 Kv = 0.01*Kp;
 
-tf1 = 5;
+tf1 = 4.9;
 
 syms t_
 
-vec_t = [0.14; 0.096];
+y = (l1^2 + 2*cos(q1)*l1*l2 + l2^2)^(1/2);
+
+vec_t = [-1.48353; 0.096];
 % vec_t = [0.4364/5; 0.4364/5];
-pos_d(1:2,1) =   vec_t*(sin(10*t_)-1);
-dvec_t = [2.793; 1.92];
+pos_d = sym(zeros(2,1));
+pos_d(1,1) = -1.48353;
+pos_d(2,1) = vec_t(2,1)*(sin(10*t_)-1);
+% dvec_t = [1.4; 1.96];
+dvec_t = [0; 0.96];
 % dvec_t = [2.18/5; 2.18/5];
 vel_d(1:2,1) = dvec_t*cos(10*t_);
 ddvec_t = [-17.5/5; -10.9/5];
@@ -180,6 +147,8 @@ acc_d(1:2,1) = 2*ddvec_t*sin(10*t_);
 
 q_init = double(subs(pos_d,t_,0))
 dq_init = double(subs(vel_d,t_,0))
+q_init = [-1.48353; -1.13446]
+dq_init = [0; 0];
 ddq_init = double(subs(acc_d,t_,0))
 x_init = [q_init;dq_init];
 q_d = double(subs(pos_d,t_,tf1))
@@ -191,7 +160,7 @@ trajectory_coefficients = [vec_t; dvec_t; ddvec_t];
 
 L = 50*eye(12);
 % [a0 + a1x + a2x^2 + a3x^3]
-alpha0 = [0.1; 0.01; 0.001; 0.0001; 0.00001; 0.000001; 0.1; 0.01; 0.001; 0.0001; 0.00001; 0.000001];
+alpha0 = [0.1; -0.01; 0.001; -0.0001; 0.00001; -0.000001; 0.1; -0.01; 0.001; -0.0001; 0.00001; -0.000001];
 % alpha0 = [0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0];
 % alpha0 = [0; 0; 0; 0; 0; 0; 0];
 
@@ -203,7 +172,6 @@ T = T1;
 X = X1;
 
 u = tau.';
-au = act_tau.';
 Err = err.';
 
 %%
@@ -226,9 +194,6 @@ dx2 = X(:,4);
 u0 = zeros(mtm,1);
 u1 = u(1:mtm,1);
 u2 = u(1:mtm,2);
-au0 = zeros(mtm,1);
-au1 = au(1:mtm,1);
-% au2 = au(1:mtm,2);
 % theta = zeros(mtm,1);
 % for i=1:mtm
 %     theta(i,1) = atan2(au1(i,1),au2(i,1));
@@ -250,7 +215,6 @@ xlabel({'Time','(0 \leq t \leq 10)'})
 ylabel({'Angular Positions','(rads)'})
 legend('MCP adaptive trajectory', 'MCP desired trajectory', 'PIP adaptive trajectory', 'PIP desired trajectory')
 title('Joint angle vs Time');
-% subplot(2,2,2);
 figure(2);
 plot(T,dx1, '-r','DisplayName', 'MCP adaptive velocities');
 hold on;
@@ -284,17 +248,6 @@ plot(tm,e2);
 hold on;
 plot(tm,e0);
 title('Errors vs Time');
-figure(5);
-plot(tm,au1, '-r', 'DisplayName','adaptive torque error');
-hold on;
-% plot(tm,au2, '-b', 'DisplayName','PIP adaptive torques');
-% hold on;
-plot(tm,au0);
-hold off
-xlabel({'Time','(0 \leq t \leq 10)'})
-ylabel({'Torque','(Nm)'})
-legend('adaptive torque error')
-title('Inputs vs Time');
 
 % for i=1:length(T)
 %     gcf;
