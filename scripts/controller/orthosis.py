@@ -60,7 +60,7 @@ class Orthosis(object):
     self.exclusive_traj = None
 
     # Scaling factor for frequency
-    self.scale = 1
+    self.scale = 1e3
 
     # Join Limits
     # [MIN_POS, MAX_POS, MIN_VEL, MAX_VEL]
@@ -76,30 +76,30 @@ class Orthosis(object):
     #    -(80 * pi / 180) * 1e5 / 2,
     #    (80*pi/180) * 1e5 / 2]
     # )
-    self.JOINT_LIMITS_1 = np.array(
-      [0.,
-       55 * pi / 180,
-       -1487.5 * self.scale,
-       1487.5 * self.scale]
-    )
-    self.JOINT_LIMITS_2 = np.array(
-      [0.,
-       80 * pi / 180,
-       -1487.5 * self.scale,
-       1487.5 * self.scale]
-    )
     # self.JOINT_LIMITS_1 = np.array(
-    #   [-55 * pi / 180,
-    #    0.,
+    #   [0.,
+    #    55 * pi / 180,
     #    -1487.5 * self.scale,
     #    1487.5 * self.scale]
     # )
     # self.JOINT_LIMITS_2 = np.array(
-    #   [-80 * pi / 180,
-    #    0.,
+    #   [0.,
+    #    80 * pi / 180,
     #    -1487.5 * self.scale,
     #    1487.5 * self.scale]
     # )
+    self.JOINT_LIMITS_1 = np.array(
+      [-80 * pi / 180,
+       0.,
+       -1487.5 * self.scale,
+       1487.5 * self.scale]
+    )
+    self.JOINT_LIMITS_2 = np.array(
+      [-55 * pi / 180,
+       0.,
+       -1487.5 * self.scale,
+       1487.5 * self.scale]
+    )
     self.TAU_LIMITS_1 = np.array([-6.818 * self.scale, 6.818 * self.scale])
     self.TAU_LIMITS_2 = np.array([-6.818 * self.scale, 6.818 * self.scale])
 
@@ -129,13 +129,13 @@ class Orthosis(object):
     trajectory = np.zeros((4,))
     if not stiff_traj:
       if traj_type == 'sin':
-        trajectory[:2] = coeffs * (sin(frequency * t + alpha) + 1 + beta)
-        trajectory[2:] = 2 * frequency * coeffs * cos(frequency * t + alpha)
+        trajectory[:2] = coeffs * (sin(frequency*t + alpha) - 1 - beta)
+        trajectory[2:] = 2 * frequency * coeffs * cos(frequency*t + alpha)
     else:
       if traj_type == 'sin':
-        trajectory[:2] = coeffs[:2] * (sin(frequency * t + alpha) + 1 + beta)
+        trajectory[:2] = coeffs[:2] * (sin(frequency*t + alpha) - 1 - beta)
         trajectory[2:] = 2 * coeffs[:2] * cos(frequency * t)
-
+    # print(coeffs, 2 * frequency * coeffs, alpha, beta)
     return trajectory
 
   def set_exclusive_traj(self, joint):
@@ -196,7 +196,7 @@ class Orthosis(object):
     t = []
     T = []
 
-    self.set_exclusive_traj(1)
+    # self.set_exclusive_traj(1)
 
     traj = self._desired_trajectory(
       t=0,
@@ -225,7 +225,7 @@ class Orthosis(object):
       u = (Kp.dot(err[:2].reshape(2, 1)) + Kv.dot(err[2:].reshape(2, 1)))
 
       if self.input_shape == (1, 1):
-        u = u[0, 0]
+        u = u[1, 0]
 
       prev_time, dx = self.step(u, self.timestep)
 
@@ -369,7 +369,7 @@ class Orthosis(object):
     # mass_mat, cor_mat, grav_mat, stiffness = self.state_dynamics(s)
     # ds[2:] = np.linalg.solve(mass_mat, u - stiffness).reshape(2,)
 
-    ds = self.simple_state_dynamics(s, u)
+    ds = self.phantom_hand_state_dynamics(s, u)
 
     # self.exclusive_traj
 
@@ -382,6 +382,124 @@ class Orthosis(object):
     y = np.array([ds[0], ds[1], ds[2], ds[3], u[0][0], u[1][0]])
 
     return y
+
+  def phantom_hand_state_dynamics(self, s, u):
+    """ """
+
+    q1 = s[0]
+    q2 = s[1]
+    dq1 = s[2]
+    dq2 = s[3]
+
+    m11 = 0.00015561 * cos(q2) + 0.00027294
+    m12 = 0.000077804 * cos(q2) + 0.0001231
+    m21 = 0.000077804 * cos(q2) + 0.0001231
+    m22 = 0.0001231
+
+    c1 = 0
+    c2 = 0.000077804 * sin(q2) * dq1**2 - 0.000077804 * dq2 * sin(q2) * dq1
+
+    g1 = 0.030274 * cos(q1) + 0.017732 * cos(q1) * cos(q2) - 0.017732 * sin(
+      q1
+    ) * sin(q2)
+    g2 = 0.017732 * cos(q1) * cos(q2) - 0.017732 * sin(q1) * sin(q2)
+
+    stiffness_relaxed_coeffs = np.array(
+      [
+        0,
+        -1.4724e-14,
+        7.2021e-11,
+        -1.5778e-7,
+        1.0758e-4,
+        0.14548,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3.6689e-9,
+        -6.6466e-7,
+        4.3944e-5,
+        -1.267e-3,
+        1.3425e-2,
+        3.056e-2
+      ]
+    ).reshape(2,
+              12)
+    stiffness_extended_coeffs = np.array(
+      [
+        2.4553e-9,
+        -7.4367e-7,
+        8.1609e-5,
+        -3.9209e-3,
+        6.6136e-2,
+        0.34106,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        -1.565e-9,
+        3.4856e-7,
+        -2.1952e-5,
+        2.9395e-4,
+        3.0018e-3,
+        0.23896
+      ]
+    ).reshape(2,
+              12)
+
+    e1 = q1 - self.JOINT_LIMITS_1[0]
+    e2 = q2 - self.JOINT_LIMITS_2[0]
+    stiffness_states = np.array(
+      [
+        (e1 * (180/pi))**5,
+        (e1 * (180/pi))**4,
+        (e1 * (180/pi))**3,
+        (e1 * (180/pi))**2,
+        (e1 * (180/pi)),
+        1,
+        (e2 * (180/pi))**5,
+        (e2 * (180/pi))**4,
+        (e2 * (180/pi))**3,
+        (e2 * (180/pi))**2,
+        (e2 * (180/pi)),
+        1
+      ]
+    ).reshape(12,
+              1)
+
+    mass_mat = np.append([[m11, m12]], [[m21, m22]]).reshape(2, 2)
+    cor_mat = np.append([[c1]], [[c2]]).reshape(2, 1)
+    stiffness = stiffness_relaxed_coeffs.dot(stiffness_states)
+
+    dx1 = dq1
+    dx2 = dq2
+    # yapf: disable
+    dx4 = (1 / (m22 - (m21/m11) * m12)) * (
+      u[1,0] - (c2 + g2 + stiffness[1,0]) + (m21/m11) * (
+        c1 + g1 + stiffness[0,0]
+      )
+    )
+    dx3 = -(1 / m11) * (m12*dx4 + (c1 + g1 - stiffness[0, 0]))
+    dx = np.array([dx1, dx2, dx3, dx4])
+    # yapf: enable
+
+    return dx
 
   def simple_state_dynamics(self, s, u):
 

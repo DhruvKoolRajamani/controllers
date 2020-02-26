@@ -117,6 +117,7 @@ G = subs(Tau, [ddq;dq], [0;0;0;0]);
 for i=1:n_dof
      V(i,1) = simplify(expand(Tau(i,1) - M(i,:)*ddq - G(i)));
 end
+V = subs(V, ddq, [0;0]);
 
 Tau = M*ddq + V + G; % Dynamic Model
 
@@ -130,3 +131,186 @@ V = vpa(subs(V),5);
 V = vpa(subs(V,[pi;q;dq],[double(pi);x]),5)
 G = vpa(subs(G),5);
 G = vpa(subs(G,[pi;q;dq],[double(pi);x]),5)
+
+Tau_Stiffness_Relaxed = [1.118e-18*dq1^5 - 1.4724e-14*dq1^4 + 7.2021e-11*dq1^3 - 1.5778e-7*dq1^2 + 0.00010758*dq1 + 0.14548;
+                 3.6689e-9*dq2^5 - 6.6466e-7*dq2^4 + 0.000043944*dq2^3 - 0.001267*dq2^2 + 0.013425*dq2 + 0.03056];
+
+% Tau_stiffness = [TAU_MCP; TAU_PIP];
+
+% Tau = vpa(M*ddq + V + G + Tau_stiffness);
+
+syms u1 u2
+u = [u1; u2];
+dx = sym(zeros(4,1));
+dx(1,1) = dq1;
+dx(2,1) = dq2;
+dx(3:4,1) = vpa(M\(u - V - Tau_Stiffness_Relaxed),3);
+
+%% Straight Line Trajectory + Returning Trajectory
+%
+
+global p
+global tau
+global tm1
+global err
+global alpha
+global act_tau
+p = 5;
+tau = [];
+tm1 = [];
+err = [];
+act_tau = [];
+
+Kp = 100*[1, 0; 0, 1];
+Kv = 0.01*Kp;
+
+tf1 = 5;
+
+syms t_
+
+vec_t = [0.14; 0.096];
+% vec_t = [0.4364/5; 0.4364/5];
+pos_d(1:2,1) =   vec_t*(sin(10*t_)-1);
+dvec_t = [2.793; 1.92];
+% dvec_t = [2.18/5; 2.18/5];
+vel_d(1:2,1) = dvec_t*cos(10*t_);
+ddvec_t = [-17.5/5; -10.9/5];
+% ddvec_t = [-10.9/5; -10.9/5];
+acc_d(1:2,1) = 2*ddvec_t*sin(10*t_);
+
+q_init = double(subs(pos_d,t_,0))
+dq_init = double(subs(vel_d,t_,0))
+ddq_init = double(subs(acc_d,t_,0))
+x_init = [q_init;dq_init];
+q_d = double(subs(pos_d,t_,tf1))
+dq_d = double(subs(vel_d,t_,tf1))
+ddq_d = double(subs(acc_d,t_,tf1))
+x_d = [q_d; dq_d];
+
+trajectory_coefficients = [vec_t; dvec_t; ddvec_t];
+
+L = 50*eye(12);
+% [a0 + a1x + a2x^2 + a3x^3]
+alpha0 = [0.1; 0.01; 0.001; 0.0001; 0.00001; 0.000001; 0.1; 0.01; 0.001; 0.0001; 0.00001; 0.000001];
+% alpha0 = [0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0];
+% alpha0 = [0; 0; 0; 0; 0; 0; 0];
+
+% [T1,X1] = ode15s(@(t,x)simArm(x, x_d, Kp, Kv, ddq_d, cart_des_1_traj, t, 1, [0 tf1]),[0 tf1],x_init);
+options = odeset('RelTol',1e-4,'AbsTol',[1e-4, 1e-4, 1e-4, 1e-4]);
+[T1,X1] = ode15s(@(t,x)simAdaptivePhantomArm(x, trajectory_coefficients, x_d, Kp, Kv, L, t, alpha0, ddq_init),[0 tf1],x_init,options);
+alpha
+T = T1;
+X = X1;
+
+u = tau.';
+au = act_tau.';
+Err = err.';
+
+%%
+[mT, nT] = size(T);
+[mtm1, ntm1] = size(tm1);
+tm = tm1;
+t_ = [0:0.01:tf1].';
+traj_d(:,1:2) = subs(pos_d.');
+vtraj_d(:,1:2) = subs(vel_d.');
+[mtm, ntm] = size(tm);
+x1 = X(:,1);
+x2 = X(:,2);
+QD1 = zeros(mT,1);
+QD1(:,1) = 1.3963;
+QD2 = zeros(mT,1);
+QD2(:,1) = 0.8727;
+x0 = zeros(mT,1);
+dx1 = X(:,3);
+dx2 = X(:,4);
+u0 = zeros(mtm,1);
+u1 = u(1:mtm,1);
+u2 = u(1:mtm,2);
+au0 = zeros(mtm,1);
+au1 = au(1:mtm,1);
+% au2 = au(1:mtm,2);
+% theta = zeros(mtm,1);
+% for i=1:mtm
+%     theta(i,1) = atan2(au1(i,1),au2(i,1));
+% end
+e0 = zeros(mtm,1);
+e1 = Err(1:mtm,1);
+e2 = Err(1:mtm,2);
+
+figure(1);
+% subplot(2,2,1);
+plot(T,x1, '-r','DisplayName', 'MCP adaptive trajectory');
+hold on;
+plot(t_,traj_d(:,1),'--r','DisplayName', 'MCP desired trajectory');
+plot(T,x2, '-b','DisplayName', 'PIP adaptive trajectory');
+plot(t_,traj_d(:,2),'--b','DisplayName', 'PIP desired trajectory');
+plot(T,x0);
+hold off
+xlabel({'Time','(0 \leq t \leq 10)'})
+ylabel({'Angular Positions','(rads)'})
+legend('MCP adaptive trajectory', 'MCP desired trajectory', 'PIP adaptive trajectory', 'PIP desired trajectory')
+title('Joint angle vs Time');
+% subplot(2,2,2);
+figure(2);
+plot(T,dx1, '-r','DisplayName', 'MCP adaptive velocities');
+hold on;
+plot(t_,vtraj_d(:,1),'--r','DisplayName', 'MCP desired velocities');
+hold on;
+plot(T,dx2, '-b','DisplayName', 'PIP adaptive velocities');
+plot(t_,vtraj_d(:,2),'--b','DisplayName', 'PIP desired velocities');
+plot(T,x0);
+hold off
+xlabel({'Time','(0 \leq t \leq 10)'})
+ylabel({'Angular Velocities','(rads/seconds)'})
+legend('MCP adaptive velocities', 'MCP desired velocities', 'PIP adaptive velocities', 'PIP desired velocities')
+title('Joint velocities vs Time');
+% subplot(2,2,3);
+figure(3);
+plot(tm,u1, '-r', 'DisplayName','MCP adaptive torques');
+hold on;
+plot(tm,u2, '-b', 'DisplayName','PIP adaptive torques');
+hold on;
+plot(tm,u0);
+hold off
+xlabel({'Time','(0 \leq t \leq 10)'})
+ylabel({'Torque','(Nm)'})
+legend('MCP adaptive torques', 'PIP adaptive torques')
+title('Inputs vs Time');
+figure(4);
+% subplot(2,2,4);
+plot(tm,e1);
+hold on;
+plot(tm,e2);
+hold on;
+plot(tm,e0);
+title('Errors vs Time');
+figure(5);
+plot(tm,au1, '-r', 'DisplayName','adaptive torque error');
+hold on;
+% plot(tm,au2, '-b', 'DisplayName','PIP adaptive torques');
+% hold on;
+plot(tm,au0);
+hold off
+xlabel({'Time','(0 \leq t \leq 10)'})
+ylabel({'Torque','(Nm)'})
+legend('adaptive torque error')
+title('Inputs vs Time');
+
+% for i=1:length(T)
+%     gcf;
+%     figure(2);
+% %     subplot(2,1,1)
+%     vals(1) = X(i,1);
+%     vals(2) = X(i,2);
+%     g = 9.8;
+%     q = [q1 q2];
+%     pi = double(pi);
+%     p_ = subs(p02);
+%     p_ = subs(p_,q,vals);
+%     drawManip(p_,[0 0 90]);
+%     view([0 0 90]);
+%     axis([-0.25 0.25 -0.25 0.25 -0.25 0.25]);
+%     drawnow;
+%     hold off
+% end
+

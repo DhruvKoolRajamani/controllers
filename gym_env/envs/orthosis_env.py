@@ -99,6 +99,7 @@ class OrthosisEnv(Orthosis, core.Env):
       self.action_space = np.array([spaces.Discrete(3), spaces.Discrete(3)])
 
     self.state = x0
+    self.scale = 1
     self.seed()
 
     return

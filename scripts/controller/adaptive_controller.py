@@ -68,7 +68,7 @@ class AdaptiveController(Orthosis):
     Kv = 1e-1 * Kp
     decay = 0
 
-    # self.set_exclusive_traj(1)
+    self.set_exclusive_traj(1)
 
     # traj_coeffs = np.array(
     #   [
@@ -198,7 +198,7 @@ class AdaptiveController(Orthosis):
       i += prev_time
       count += 1
 
-      if count % 500 == 0:
+      if count % 100 == 0:
         plt.plot(J1, 'r')
         plt.plot(J2, 'b')
         plt.plot(T1, 'r--')
