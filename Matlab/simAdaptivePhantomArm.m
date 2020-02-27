@@ -87,16 +87,23 @@ s_ = 0.1;
 % ddvec_t = t_coeffs(5:6,1);
 
 
-% q1 = (1.48/10)*t - 1.48;
 q1 = -1.48353;
 q2 = (1.13/10)*t - 1.13;
+
+% q1 = (1.48/10)*t - 1.48;
+% q2 = -1.13;
 
 % y_d = -(l1^2 + 2*cos(q2)*l1*l2 + l2^2)^(1/2);
 % dy_d = 2*l1*l2*sin(q2)*(1.13/10);
 % ddy_d = -(-2*l1*l2*cos(q2)*(1.13/10)^2 - 2*l1*l2*sin(x(2,1))*0);
+
 y_d = q2;
 dy_d = 1.13/10;
 ddy_d = 0;
+
+% y_d = q1;
+% dy_d = 1.48/10;
+% ddy_d = 0;
 
 % y_d = (l1^2 + 2*cos(x(2,1))*l1*l2 + l2^2)^(1/2);
 % dy_d = -2*l1*l2*sin(x(2,1))*x(4,1);
@@ -120,6 +127,21 @@ T2 = T(2,1);
 
 v = 0;
 
+y = x(2,1);
+dy = x(4,1);
+ddy = ddx(2,1);
+dH = [0, 0];
+H1 = 0;
+H2 = 1;
+
+H_tilda = H2-(H1/M(1,1))*M(1,2);
+H_tilda_inv = pinv(H_tilda);
+
+e(1,1) = 0;
+e(2,1) = y_d - y;
+de = dy_d - dy;
+err = [err e];
+
 if p == 1
     E = E + e*step;
     u = Kp*e + Kv*de + Ki*E;
@@ -128,15 +150,21 @@ elseif p == 2
 elseif p == 3
     u = -(Kp*e + Kv*de);
 elseif p == 4
-    lambda = 2*Kp;
-    s = de + lambda*e;
+    Kp = Kp(1,1);
+    lambda = 110*Kp;
+    s = de + lambda*e(2,1);
     % Adaptive control law
     x_unk_1 = [1 ((x(1,1) + 1.48353)*(180/pi)) ((x(1,1) + 1.48353)*(180/pi))^2 ((x(1,1) + 1.48353)*(180/pi))^3 ((x(1,1) + 1.48353)*(180/pi))^4 ((x(1,1) + 1.48353)*(180/pi))^5]; % de(1,1)
     x_unk_2 = [1 ((x(2,1)+1.13446)*(180/pi)) ((x(2,1)+1.13446)*(180/pi))^2 ((x(2,1)+1.13446)*(180/pi))^3 ((x(2,1)+1.13446)*(180/pi))^4 ((x(2,1)+1.13446)*(180/pi))^5]; % de(2,1)
 
-    Y = [normpdf(x_unk_1) 0 0 0 0 0 0;
-         0 0 0 0 0 0 normpdf(x_unk_2)];
-    alpha_gradient = -L\Y.'*Kp*s; %
+%     Y = [normpdf(x_unk_1) 0 0 0 0 0 0;
+%          0 0 0 0 0 0 normpdf(x_unk_2)];
+
+    Y = normpdf(x_unk_2);
+
+%     alpha_gradient = -L\Y.'*Kp*s; %
+    
+    alpha_gradient = -L\Y.'.*Kp*s; %
     if t == 0
         alpha = alpha0;
         k=0;
@@ -145,7 +173,7 @@ elseif p == 4
         alpha = alpha + alpha_gradient*k;
     %     disp(alpha)
     end
-    u = Y*alpha- Kp*s; %  %-
+    v = Y*alpha + Kp*s; %  %-
 
 elseif p == 5
     if t == 0
@@ -210,46 +238,40 @@ elseif p == 5
     end
 
 elseif p == 6
-%     PFL Task Space
-
-%     y = (l1^2 + 2*cos(x(2,1))*l1*l2 + l2^2)^(1/2);
-%     dy = -2*l1*l2*sin(x(2,1))*x(4,1);
-%     ddy = (-2*l1*l2*cos(x(2,1))*x(4,1)^2 - 2*l1*l2*sin(x(2,1))*ddx(2,1));
-%     y = l1*sin(x(1,1) + x(2,1)) + l2*sin(x(1,1));
-%     dy = l1*cos(x(1,1) + x(2,1))*(x(3,1) + x(4,1)) + l2*cos(x(1,1))*x(3,1);
-%     ddy = l1*cos(x(1,1) + x(2,1))*(ddx(1,1) + ddx(2,1)) - l2*sin(x(1,1))*x(3,1)^2 + l2*cos(x(1,1))*ddx(1,1) - l1*sin(x(1,1) + x(2,1))*(x(3,1) + x(4,1))^2;
-    % ddy_d = -(l1*l2*cos(x(2,1))*x(4,1)^2)/(l1^2 + 2*cos(x(2,1))*l1*l2 + l2^2)^(1/2) - (l1*l2*sin(x(2,1))*ddx(2,1))/(l1^2 + 2*cos(x(2,1))*l1*l2 + l2^2)^(1/2) - (l1^2*l2^2*sin(x(2,1))^2*x(4,1)^2)/(l1^2 + 2*cos(x(2,1))*l1*l2 + l2^2)^(3/2);
-    y = x(2,1);
-    dy = x(4,1);
-    ddy = ddx(2,1);
-%     dH = [0, -2*l1*l2*cos(x(2,1))*x(4,1)];
-%     dH = [-l1*sin(x(1,1) + x(1,1))*(x(3,1) + x(4,1)) - l2*sin(x(1,1))*x(3,1), -l1*sin(x(1,1) + x(2,1))*(x(3,1) + x(4,1))];
-    dH = [0, 0];
-
-%     H1 = l1*cos(x(1,1) + x(2,1)) + l2*cos(x(1,1));
-    H1 = 0;
-%     H2 = -(l1*l2*sin(x(2,1)))/(l1^2 + 2*cos(x(2,1))*l1*l2 + l2^2)^(1/2);
-%     H2 = l1*cos(x(1,1) + x(2,1));
-    H2 = 1;
-
-    H_tilda = H2-(H1/M(1,1))*M(1,2);
-    H_tilda_inv = pinv(H_tilda);
+%     PFL Task Space Colloc
     
-%     u(1,1) = 0;
-%     u(2,1) = (M(2,1)/M(1,1))*(T1 - M(1,2)*ddy_d(2,1)) + M(2,2)*ddy_d(2,1) + T2;
     
     v = ddy_d + Kv(1,1)*(dy_d - dy) + Kp(1,1)*(y_d - y);
     
-    ddq2 = H_tilda_inv*(v - dH*x(3:4,1) - (H1/M(1,1))*T1); %v
+    
+
+elseif p == 7
+%     PFL Task Space Non Colloc
+    y = x(1,1);
+    dy = x(3,1);
+    ddy = ddx(1,1);
+    dH = [0, 0];
+    H1 = 1;
+    H2 = 0;
+
+    H_tilda = -M(1,1)\M(1,2);
+    H_tilda_inv = pinv(H_tilda);
+    
+    v = ddy_d + Kv(1,1)*(dy_d - dy) + Kp(1,1)*(y_d - y);
+    
+    ddq1 = v;
+    ddq2 = M(1,2)\(T1 - M(1,1)*v); %v
     
     e(1,1) = 0;
     e(2,1) = y_d - y;
     err = [err e];
-%     u = [ddq1; ddq2]
     
 else
     u = 0;
 end
+
+ddq2 = (1/(M(2,2) - (M(2,1)/M(1,1))*M(1,2)))*(v + T2 + (M(2,1)/M(1,1))*T1);
+ddq1 = (1/M(1,1))*(T1 - M(1,2)*ddq2);
 
 tau = [tau v];
 
@@ -265,12 +287,12 @@ end
 
 % dx(4,1) = (1/(M(2,2) - (M(2,1)/M(1,1))*M(1,2)))*(u(2,1) + T2 - (M(2,1)/M(1,1))*T1);
 dx(4,1) = ddq2;
-dx(3,1) = (1/M(1,1))*(T1 - M(1,2)*dx(4,1));
+dx(3,1) = ddq1;
 
-
-ddx = dx(3:4,1);
 % dx(4,1) = (1/(M(2,2) - (M(2,1)/M(1,1))*M(1,2)))*(0 + T2 + (M(2,1)/M(1,1))*T1); %u(2,1)
 % dx(3,1) = (1/M(1,1))*(T1 - M(1,2)*dx(4,1));
+
+ddx = dx(3:4,1);
 % dx(3:4,1) = M\([0; 0] - [T1; T2]); % u(2,1)
 
 % dx(3:4,1) = M\(u + Tg); % u - V -  - Tau_Stiffness

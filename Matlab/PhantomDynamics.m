@@ -118,7 +118,7 @@ global err
 global alpha
 global act_tau
 global cart
-p = 6;
+p = 4;
 tau = [];
 tm1 = [];
 err = [];
@@ -128,11 +128,9 @@ act_tau = [];
 Kp = 1*[1, 0; 0, 1];
 Kv = 0.01*Kp;
 
-tf1 = 9;
+tf1 = 1;
 
 syms t_
-
-y = (l1^2 + 2*cos(q1)*l1*l2 + l2^2)^(1/2);
 
 vec_t = [-1.48353; 0.096];
 % vec_t = [0.4364/5; 0.4364/5];
@@ -147,6 +145,7 @@ ddvec_t = [0; -9.6];
 % ddvec_t = [-10.9/5; -10.9/5];
 acc_d(1:2,1) = ddvec_t*sin(10*t_);
 
+% q1_d = (1.48/10)*t_ - 1.48;
 q2_d = (1.13/10)*t_ - 1.13;
 
 q_init = double(subs(pos_d,t_,0))
@@ -162,7 +161,7 @@ x_d = [q_d; dq_d];
 
 trajectory_coefficients = [vec_t; dvec_t; ddvec_t];
 
-L = 50*eye(6);
+L = 20*eye(6);
 % [a0 + a1x + a2x^2 + a3x^3]
 alpha0 = [0.1; -0.01; 0.001; -0.0001; 0.00001; -0.000001];
 % alpha0 = [0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0];
@@ -186,8 +185,11 @@ cartesian_desired = cart(3:4,:).';
 tm = tm1;
 [mtm, ntm] = size(tm);
 t_ = [0:0.01:tf1].';
-traj_d(:,1) = 0*t_;
+% traj_d(:,1) = subs(q1_d);
+% traj_d(:,2) = 0*t_;
 traj_d(:,2) = subs(q2_d);
+traj_d(:,1) = 0*t_;
+% vtraj_d(:,1:2) = [1.48/10, 0]; % 1.13/10
 vtraj_d(:,1:2) = [0, 1.13/10];
 x1 = X(:,1);
 x2 = X(:,2);
