@@ -117,16 +117,18 @@ global tm1
 global err
 global alpha
 global act_tau
-p = 4;
+global cart
+p = 6;
 tau = [];
 tm1 = [];
 err = [];
+cart = [];
 act_tau = [];
 
-Kp = 100*[1, 0; 0, 1];
+Kp = 1*[1, 0; 0, 1];
 Kv = 0.01*Kp;
 
-tf1 = 4.9;
+tf1 = 9;
 
 syms t_
 
@@ -141,9 +143,11 @@ pos_d(2,1) = vec_t(2,1)*(sin(10*t_)-1);
 dvec_t = [0; 0.96];
 % dvec_t = [2.18/5; 2.18/5];
 vel_d(1:2,1) = dvec_t*cos(10*t_);
-ddvec_t = [-17.5/5; -10.9/5];
+ddvec_t = [0; -9.6];
 % ddvec_t = [-10.9/5; -10.9/5];
-acc_d(1:2,1) = 2*ddvec_t*sin(10*t_);
+acc_d(1:2,1) = ddvec_t*sin(10*t_);
+
+q2_d = (1.13/10)*t_ - 1.13;
 
 q_init = double(subs(pos_d,t_,0))
 dq_init = double(subs(vel_d,t_,0))
@@ -158,9 +162,9 @@ x_d = [q_d; dq_d];
 
 trajectory_coefficients = [vec_t; dvec_t; ddvec_t];
 
-L = 50*eye(12);
+L = 50*eye(6);
 % [a0 + a1x + a2x^2 + a3x^3]
-alpha0 = [0.1; -0.01; 0.001; -0.0001; 0.00001; -0.000001; 0.1; -0.01; 0.001; -0.0001; 0.00001; -0.000001];
+alpha0 = [0.1; -0.01; 0.001; -0.0001; 0.00001; -0.000001];
 % alpha0 = [0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0];
 % alpha0 = [0; 0; 0; 0; 0; 0; 0];
 
@@ -173,15 +177,18 @@ X = X1;
 
 u = tau.';
 Err = err.';
+cartesian_current = cart(1:2,:).';
+cartesian_desired = cart(3:4,:).';
 
 %%
 [mT, nT] = size(T);
 [mtm1, ntm1] = size(tm1);
 tm = tm1;
-t_ = [0:0.01:tf1].';
-traj_d(:,1:2) = subs(pos_d.');
-vtraj_d(:,1:2) = subs(vel_d.');
 [mtm, ntm] = size(tm);
+t_ = [0:0.01:tf1].';
+traj_d(:,1) = 0*t_;
+traj_d(:,2) = subs(q2_d);
+vtraj_d(:,1:2) = [0, 1.13/10];
 x1 = X(:,1);
 x2 = X(:,2);
 QD1 = zeros(mT,1);
@@ -193,7 +200,12 @@ dx1 = X(:,3);
 dx2 = X(:,4);
 u0 = zeros(mtm,1);
 u1 = u(1:mtm,1);
-u2 = u(1:mtm,2);
+% u2 = u(1:mtm,2);
+ccx = cartesian_current(1:mtm,1).';
+ccy = cartesian_current(1:mtm,2).';
+cdx = cartesian_desired(1:mtm,1).';
+cdy = cartesian_desired(1:mtm,2).';
+
 % theta = zeros(mtm,1);
 % for i=1:mtm
 %     theta(i,1) = atan2(au1(i,1),au2(i,1));
@@ -202,7 +214,7 @@ e0 = zeros(mtm,1);
 e1 = Err(1:mtm,1);
 e2 = Err(1:mtm,2);
 
-figure(1);
+figure(2);
 % subplot(2,2,1);
 plot(T,x1, '-r','DisplayName', 'MCP adaptive trajectory');
 hold on;
@@ -215,7 +227,7 @@ xlabel({'Time','(0 \leq t \leq 10)'})
 ylabel({'Angular Positions','(rads)'})
 legend('MCP adaptive trajectory', 'MCP desired trajectory', 'PIP adaptive trajectory', 'PIP desired trajectory')
 title('Joint angle vs Time');
-figure(2);
+figure(3);
 plot(T,dx1, '-r','DisplayName', 'MCP adaptive velocities');
 hold on;
 plot(t_,vtraj_d(:,1),'--r','DisplayName', 'MCP desired velocities');
@@ -229,18 +241,18 @@ ylabel({'Angular Velocities','(rads/seconds)'})
 legend('MCP adaptive velocities', 'MCP desired velocities', 'PIP adaptive velocities', 'PIP desired velocities')
 title('Joint velocities vs Time');
 % subplot(2,2,3);
-figure(3);
+figure(4);
 plot(tm,u1, '-r', 'DisplayName','MCP adaptive torques');
 hold on;
-plot(tm,u2, '-b', 'DisplayName','PIP adaptive torques');
-hold on;
+% plot(tm,u2, '-b', 'DisplayName','PIP adaptive torques');
+% hold on;
 plot(tm,u0);
 hold off
 xlabel({'Time','(0 \leq t \leq 10)'})
 ylabel({'Torque','(Nm)'})
 legend('MCP adaptive torques', 'PIP adaptive torques')
 title('Inputs vs Time');
-figure(4);
+figure(5);
 % subplot(2,2,4);
 plot(tm,e1);
 hold on;
@@ -248,6 +260,11 @@ plot(tm,e2);
 hold on;
 plot(tm,e0);
 title('Errors vs Time');
+
+figure(6)
+plot(ccx, ccy, '-r', 'DisplayName','MCP adaptive torques')
+hold on;
+plot(cdx, cdy, '--b', 'DisplayName','PIP adaptive torques')
 
 % for i=1:length(T)
 %     gcf;

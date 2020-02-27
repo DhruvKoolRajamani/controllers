@@ -6,6 +6,7 @@ global tm1
 global tau
 global err
 global alpha
+global cart
 global act_tau
 global zeta
 global s
@@ -78,20 +79,46 @@ V_ = 0.000015*ones(2,1);
 s_ = 0.1;
 
 % Desired Trajectory
-vec_t = t_coeffs(1:2,1);
-x_d(1,1) = vec_t(1,1);
-x_d(2,1) = vec_t(2,1)*(sin(10*t)-1);
-dvec_t = t_coeffs(3:4,1);
-x_d(3:4,1) = dvec_t*cos(10*t);
-ddvec_t = t_coeffs(5:6,1);
+% vec_t = t_coeffs(1:2,1);
+% x_d(1,1) = vec_t(1,1);
+% x_d(2,1) = vec_t(2,1)*(sin(10*t)-1);
+% dvec_t = t_coeffs(3:4,1);
+% x_d(3:4,1) = dvec_t*cos(10*t);
+% ddvec_t = t_coeffs(5:6,1);
 
-e = x(1:2,1) - x_d(1:2,1);
-err = [err e];
-de = x(3:4,1) - x_d(3:4,1);
+
+% q1 = (1.48/10)*t - 1.48;
+q1 = -1.48353;
+q2 = (1.13/10)*t - 1.13;
+
+% y_d = -(l1^2 + 2*cos(q2)*l1*l2 + l2^2)^(1/2);
+% dy_d = 2*l1*l2*sin(q2)*(1.13/10);
+% ddy_d = -(-2*l1*l2*cos(q2)*(1.13/10)^2 - 2*l1*l2*sin(x(2,1))*0);
+y_d = q2;
+dy_d = 1.13/10;
+ddy_d = 0;
+
+% y_d = (l1^2 + 2*cos(x(2,1))*l1*l2 + l2^2)^(1/2);
+% dy_d = -2*l1*l2*sin(x(2,1))*x(4,1);
+% ddy_d = -2*l1*l2*cos(x(2,1))*x(4,1)^2 - 2*l1*l2*sin(x(2,1))*ddx(2,1);
+
+% Adding fk logging:
+X = l1*cos(x(1,1) + x(2,1)) + l2*cos(x(1,1));
+Y = l1*sin(x(1,1) + x(2,1)) + l2*sin(x(1,1));
+X_D = l1*cos(q1 + q2) + l2*cos(q1);
+Y_D = l1*sin(q1 + q2) + l2*sin(q1);
+task_space = [X; Y; X_D; Y_D];
+cart = [cart task_space];
+
+% e = x(1:2,1) - x_d(1:2,1);
+% err = [err e];
+% de = x(3:4,1) - x_d(3:4,1);
 
 T = Tg - V - Tau_Stiffness;
 T1 = T(1,1);
 T2 = T(2,1);
+
+v = 0;
 
 if p == 1
     E = E + e*step;
@@ -185,31 +212,46 @@ elseif p == 5
 elseif p == 6
 %     PFL Task Space
 
-    y = (l1^2 + 2*cos(x(2,1))*l1*l2 + l2^2)^(1/2);
+%     y = (l1^2 + 2*cos(x(2,1))*l1*l2 + l2^2)^(1/2);
+%     dy = -2*l1*l2*sin(x(2,1))*x(4,1);
+%     ddy = (-2*l1*l2*cos(x(2,1))*x(4,1)^2 - 2*l1*l2*sin(x(2,1))*ddx(2,1));
+%     y = l1*sin(x(1,1) + x(2,1)) + l2*sin(x(1,1));
+%     dy = l1*cos(x(1,1) + x(2,1))*(x(3,1) + x(4,1)) + l2*cos(x(1,1))*x(3,1);
+%     ddy = l1*cos(x(1,1) + x(2,1))*(ddx(1,1) + ddx(2,1)) - l2*sin(x(1,1))*x(3,1)^2 + l2*cos(x(1,1))*ddx(1,1) - l1*sin(x(1,1) + x(2,1))*(x(3,1) + x(4,1))^2;
     % ddy_d = -(l1*l2*cos(x(2,1))*x(4,1)^2)/(l1^2 + 2*cos(x(2,1))*l1*l2 + l2^2)^(1/2) - (l1*l2*sin(x(2,1))*ddx(2,1))/(l1^2 + 2*cos(x(2,1))*l1*l2 + l2^2)^(1/2) - (l1^2*l2^2*sin(x(2,1))^2*x(4,1)^2)/(l1^2 + 2*cos(x(2,1))*l1*l2 + l2^2)^(3/2);
-    ddy_d = ddx;
-   
+    y = x(2,1);
+    dy = x(4,1);
+    ddy = ddx(2,1);
+%     dH = [0, -2*l1*l2*cos(x(2,1))*x(4,1)];
+%     dH = [-l1*sin(x(1,1) + x(1,1))*(x(3,1) + x(4,1)) - l2*sin(x(1,1))*x(3,1), -l1*sin(x(1,1) + x(2,1))*(x(3,1) + x(4,1))];
     dH = [0, 0];
-    
+
+%     H1 = l1*cos(x(1,1) + x(2,1)) + l2*cos(x(1,1));
     H1 = 0;
-    H2 = -(l1*l2*sin(x(2,1)))/(l1^2 + 2*cos(x(2,1))*l1*l2 + l2^2)^(1/2);
-    
+%     H2 = -(l1*l2*sin(x(2,1)))/(l1^2 + 2*cos(x(2,1))*l1*l2 + l2^2)^(1/2);
+%     H2 = l1*cos(x(1,1) + x(2,1));
+    H2 = 1;
+
     H_tilda = H2-(H1/M(1,1))*M(1,2);
     H_tilda_inv = pinv(H_tilda);
     
-%     ddq2 = H_tilda_inv*(ddy_d - dH*x(3:4,1) - (H1/M(1,1))*T1);
-    ddq2 = ddy_d(2,1);
-    ddq1 = (1/M(1,1))*(T1 - M(1,2)*ddq2);
+%     u(1,1) = 0;
+%     u(2,1) = (M(2,1)/M(1,1))*(T1 - M(1,2)*ddy_d(2,1)) + M(2,2)*ddy_d(2,1) + T2;
     
-    u(1,1) = 0;
-    u(2,1) = (M(2,1)/M(1,1))*(T1 - M(1,2)*ddy_d(2,1)) + M(2,2)*ddy_d(2,1) + T2;
+    v = ddy_d + Kv(1,1)*(dy_d - dy) + Kp(1,1)*(y_d - y);
+    
+    ddq2 = H_tilda_inv*(v - dH*x(3:4,1) - (H1/M(1,1))*T1); %v
+    
+    e(1,1) = 0;
+    e(2,1) = y_d - y;
+    err = [err e];
 %     u = [ddq1; ddq2]
     
 else
     u = 0;
 end
 
-tau = [tau u];
+tau = [tau v];
 
 dx(1,1) = x(3,1);
 dx(2,1) = x(4,1);
@@ -221,7 +263,8 @@ if x(2,1) > 0 || x(2,1) < -1.13446
     dx(2,1) = 0;
 end
 
-dx(4,1) = (1/(M(2,2) - (M(2,1)/M(1,1))*M(1,2)))*(u(2,1) + T2 - (M(2,1)/M(1,1))*T1);
+% dx(4,1) = (1/(M(2,2) - (M(2,1)/M(1,1))*M(1,2)))*(u(2,1) + T2 - (M(2,1)/M(1,1))*T1);
+dx(4,1) = ddq2;
 dx(3,1) = (1/M(1,1))*(T1 - M(1,2)*dx(4,1));
 
 
@@ -230,6 +273,6 @@ ddx = dx(3:4,1);
 % dx(3,1) = (1/M(1,1))*(T1 - M(1,2)*dx(4,1));
 % dx(3:4,1) = M\([0; 0] - [T1; T2]); % u(2,1)
 
-% dx(3:4,1) = M\(u + Tg - V -Tau_Stiffness); % u - V -  - Tau_Stiffness
+% dx(3:4,1) = M\(u + Tg); % u - V -  - Tau_Stiffness
 k=t;
 end
